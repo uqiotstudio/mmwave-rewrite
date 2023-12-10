@@ -8,6 +8,7 @@ use std::{error::Error, fs::File, io::Read, thread, time};
 
 const MAGICWORD: [u16; 4] = [0x0102, 0x0304, 0x0506, 0x0708];
 
+#[derive(Debug)]
 pub struct PortDescriptor {
     pub path: String,
     pub baud_rate: u32,
@@ -24,12 +25,14 @@ impl PortDescriptor {
     }
 }
 
+#[derive(Debug)]
 pub struct RadarDescriptor {
     pub cli_descriptor: PortDescriptor,
     pub data_descriptor: PortDescriptor,
     pub config_path: String,
 }
 
+#[derive(Debug)]
 pub struct RadarInitError {
     blame: Box<dyn Error>,
     descriptor: RadarDescriptor,
@@ -78,6 +81,7 @@ impl RadarDescriptor {
     }
 }
 
+#[derive(Debug)]
 pub struct Radar {
     radar_descriptor: RadarDescriptor,
     cli_port: Box<dyn SerialPort>,
@@ -86,12 +90,14 @@ pub struct Radar {
     buffer: Vec<u8>,
 }
 
+#[derive(Debug)]
 pub enum RadarReadResult {
     Success(Radar, Frame),
     Malformed(Radar),
     Disconnected(RadarDescriptor),
 }
 
+#[derive(Debug)]
 pub struct RadarWriteError {
     blame: Box<dyn Error>,
     descriptor: RadarDescriptor,
@@ -119,7 +125,7 @@ impl Radar {
                 self.cli_port.write(b"\n")?;
                 self.cli_port.flush()?;
                 println!("{}", line);
-                thread::sleep(time::Duration::from_millis(10));
+                thread::sleep(time::Duration::from_millis(20));
             }
             Ok(())
         }() {
@@ -158,9 +164,10 @@ impl Radar {
                 Some(index) => break index,
                 // In the event of None, drain all but the last MAGICWORD::memsize worth of elements
                 // as they are irrelevant going forwards
-                None => self
-                    .buffer
-                    .drain(0..(self.buffer.len() - std::mem::size_of_val(&MAGICWORD)).max(0)),
+                None => self.buffer.drain(
+                    0..(self.buffer.len()
+                        - std::mem::size_of_val(&MAGICWORD).min(self.buffer.len())),
+                ),
             };
         };
 
@@ -189,8 +196,9 @@ impl Radar {
 
         // Block until the size described by header is available.
 
-        while self.buffer.len() < header.packet_length as usize - std::mem::size_of::<FrameHeader>()
-        {
+        let body_length = header.packet_length as usize - std::mem::size_of::<FrameHeader>();
+
+        while self.buffer.len() < body_length {
             let bytes_available = self.data_port.bytes_to_read().unwrap_or(0);
             let mut temp_buffer = vec![0; bytes_available as usize];
             if let Err(e) = self.data_port.read(&mut temp_buffer) {
@@ -199,9 +207,7 @@ impl Radar {
             self.buffer.extend(temp_buffer);
         }
 
-        // Deserialize into a frame. Reset buffer to the remainder.
-
-        todo!()
+        // TODO fill this out
     }
 }
 
@@ -234,11 +240,13 @@ struct TLVHeader {
     length: u32,
 }
 
+#[derive(Debug)]
 struct TLV {
     header: TLVHeader,
     body: TLVBody,
 }
 
+#[derive(Debug)]
 pub struct Frame {
     header: FrameHeader,
     body: Vec<TLV>,
@@ -279,6 +287,7 @@ struct TLVSideInfo {}
 #[derive(Deserialize, Debug)]
 struct TLVAzimuthElevationStaticHeatmap {}
 
+#[derive(Debug)]
 enum TLVBody {
     PointCloud(TLVPointCloud),
     RangeProfile(TLVRangeProfile),
