@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use serde::de::{DeserializeOwned, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_binary::binary_stream::Endian;
 use serialport::SerialPort;
 use std::error::Error;
@@ -7,7 +8,7 @@ use std::io::prelude::*;
 use std::marker::PhantomData;
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
-use std::{thread, time};
+use std::{fmt, thread, time};
 
 const MAGICWORD: [u16; 4] = [0x0102, 0x0304, 0x0506, 0x0708];
 
@@ -41,6 +42,12 @@ enum TLVType {
 }
 
 #[derive(Deserialize, Debug)]
+struct NdVec<T: Serialize + DeserializeOwned, const N: usize> {
+    #[serde(with = "serde_arrays")]
+    data: [T; N],
+}
+
+#[derive(Deserialize, Debug)]
 struct TLVHeader {
     tlv_type: TLVType,
     length: u32,
@@ -48,11 +55,14 @@ struct TLVHeader {
 
 #[derive(Deserialize, Debug)]
 struct TLVPointCloud {
-    points: Vec<[f32; 4]>, // Vector of points, (x, y, z, doppler)
+    points: Vec<NdVec<u32, 4>>, // Vector of points, (x, y, z, doppler)
 }
 
 #[derive(Deserialize, Debug)]
-struct TLVRangeProfile {}
+struct TLVRangeProfile {
+    #[serde(deserialize_with = "custom_vec_deserializer::<_, u16, 2>")]
+    points: Vec<NdVec<u16, 2>>,
+}
 
 #[derive(Deserialize, Debug)]
 struct TLVNoiseProfile {}
@@ -72,9 +82,50 @@ struct TLVSideInfo {}
 #[derive(Deserialize, Debug)]
 struct TLVAzimuthElevationStaticHeatmap {}
 
+fn custom_vec_deserializer<'de, D, T, const N: usize>(
+    deserializer: D,
+) -> Result<Vec<NdVec<T, N>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Serialize + DeserializeOwned,
+{
+    struct VecVisitor<T, const N: usize>
+    where
+        T: Serialize + DeserializeOwned,
+    {
+        marker: PhantomData<NdVec<T, N>>,
+    }
+
+    impl<'de, T: Serialize + DeserializeOwned, const N: usize> Visitor<'de> for VecVisitor<T, N> {
+        type Value = Vec<NdVec<T, N>>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a sequence of arrays")
+        }
+
+        fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error>
+        where
+            S: SeqAccess<'de>,
+        {
+            let mut vec = Vec::new();
+
+            while let Some(array) = seq.next_element::<NdVec<T, N>>()? {
+                vec.push(array);
+            }
+
+            Ok(vec)
+        }
+    }
+
+    let visitor = VecVisitor {
+        marker: PhantomData,
+    };
+    deserializer.deserialize_seq(visitor)
+}
+
 // Note: there aren't exactly unit tests for these and half I havent even used, they might just fail
 #[derive(Debug)]
-enum TLV {
+enum TLVBody {
     PointCloud(TLVPointCloud),
     RangeProfile(TLVRangeProfile),
     NoiseProfile(TLVNoiseProfile),
@@ -85,37 +136,46 @@ enum TLV {
     AzimuthElevationStaticHeatmap(TLVAzimuthElevationStaticHeatmap),
 }
 
-impl<'de> Deserialize<'de> for TLV {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let header = TLVHeader::deserialize(deserializer)?;
-        match header.tlv_type {
-            TLVType::PointCloud => Ok(TLV::PointCloud(TLVPointCloud::deserialize(deserializer)?)),
-            TLVType::RangeProfile => Ok(TLV::RangeProfile(TLVRangeProfile::deserialize(
-                deserializer,
-            )?)),
-            TLVType::NoiseProfile => Ok(TLV::NoiseProfile(TLVNoiseProfile::deserialize(
-                deserializer,
-            )?)),
-            TLVType::StaticAzimuthHeatmap => Ok(TLV::StaticAzimuthHeatmap(
-                TLVStaticAzimuthHeatmap::deserialize(deserializer)?,
-            )),
-            TLVType::RangeDopplerHeatmap => Ok(TLV::RangeDopplerHeatmap(
-                TLVRangeDopplerHeatmap::deserialize(deserializer)?,
-            )),
-            TLVType::Statistics => Ok(TLV::Statistics(TLVStatistics::deserialize(deserializer)?)),
-            TLVType::SideInfo => Ok(TLV::SideInfo(TLVSideInfo::deserialize(deserializer)?)),
-            TLVType::AzimuthElevationStaticHeatmap => Ok(TLV::AzimuthElevationStaticHeatmap(
-                TLVAzimuthElevationStaticHeatmap::deserialize(deserializer)?,
-            )),
-            _ => panic!(), // This should never happen so just crash.
-        }
-    }
+#[derive(Debug)]
+struct TLV {
+    header: TLVHeader,
+    body: TLVBody,
 }
 
 impl TLV {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
+        let start_index = std::mem::size_of::<TLVHeader>();
+        let header: TLVHeader = bincode::deserialize(&bytes[..start_index])?;
+        dbg!(&header);
+        let body = match header.tlv_type {
+            TLVType::PointCloud => TLVBody::PointCloud(bincode::deserialize(
+                &bytes[start_index..start_index + header.length as usize],
+            )?),
+            TLVType::RangeProfile => TLVBody::RangeProfile(bincode::deserialize(
+                &bytes[start_index..start_index + header.length as usize],
+            )?),
+            TLVType::NoiseProfile => TLVBody::NoiseProfile(bincode::deserialize(
+                &bytes[start_index..start_index + header.length as usize],
+            )?),
+            TLVType::StaticAzimuthHeatmap => TLVBody::StaticAzimuthHeatmap(bincode::deserialize(
+                &bytes[start_index..start_index + header.length as usize],
+            )?),
+            TLVType::RangeDopplerHeatmap => TLVBody::RangeDopplerHeatmap(bincode::deserialize(
+                &bytes[start_index..start_index + header.length as usize],
+            )?),
+            TLVType::Statistics => TLVBody::Statistics(bincode::deserialize(
+                &bytes[start_index..start_index + header.length as usize],
+            )?),
+            TLVType::SideInfo => TLVBody::SideInfo(bincode::deserialize(
+                &bytes[start_index..start_index + header.length as usize],
+            )?),
+            _ => panic!(), // This should never happen so just crash.
+        };
+        Ok(Self { header, body })
+    }
+}
+
+impl TLVBody {
     fn from_bytes(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
         todo!()
     }
@@ -232,7 +292,7 @@ impl RadarInstance<ValidRadarInstance> {
             _ => {}
         }
 
-        let Some(start_index) =
+        let Some(mut start_index) =
             buffer
                 .windows(std::mem::size_of_val(&MAGICWORD))
                 .position(|window| {
@@ -247,16 +307,28 @@ impl RadarInstance<ValidRadarInstance> {
         };
 
         let header = FrameHeader::from_bytes(
-            &buffer[start_index..start_index + std::mem::size_of::<FrameHeader>() + 10],
+            &buffer[start_index..start_index + std::mem::size_of::<FrameHeader>()],
         )
         .unwrap();
         dbg!(&header);
 
+        // Bump the start index up to after the frame header
+        dbg!(start_index);
+        start_index = std::mem::size_of::<FrameHeader>() + start_index;
+        dbg!(start_index);
+        dbg!(buffer.len());
+
         // Parse all of the TLVs (type-length-value) using the magic of serde!
         for i in (0..header.num_tlvs) {
-            // let tlv = tlv_from_bytes(&buffer[start_index..]);
-            // start_index += std::mem::size_of_val(&tlv);
-            // dbg!(tlv);
+            let tlv = match TLV::from_bytes(&buffer[start_index..]) {
+                Ok(tlv) => tlv,
+                Err(e) => {
+                    eprintln!("Malformed TLV with error {:?}", e);
+                    break;
+                }
+            };
+            start_index += tlv.header.length as usize + std::mem::size_of::<TLVHeader>();
+            dbg!(tlv);
         }
 
         RadarReadResult::Good("".to_owned(), self)
