@@ -230,16 +230,20 @@ where
 
 pub trait RadarState {}
 #[derive(Debug)]
-pub struct ValidRadarInstance;
+pub struct RadarReadyState; // The radar has found both magic words
 #[derive(Debug)]
-pub struct InvalidRadarInstance;
-impl RadarState for ValidRadarInstance {}
-impl RadarState for InvalidRadarInstance {}
+pub struct RadarReadingState; // The radar has not found the second magicword
+#[derive(Debug)]
+pub struct RadarFreshState; // The radar has not found the first magicword
+#[derive(Debug)]
+pub struct RadarDisconnectedState; // The radar has disconnected and requires some fixing
+impl RadarState for RadarReadyState {}
+impl RadarState for RadarReadingState {}
+impl RadarState for RadarFreshState {}
+impl RadarState for RadarDisconnectedState {}
 
 impl RadarDescriptor {
-    pub fn initialize(
-        &self,
-    ) -> Result<RadarInstance<ValidRadarInstance>, Box<dyn std::error::Error>> {
+    pub fn initialize(&self) -> Result<RadarInstance<RadarFreshState>, Box<dyn std::error::Error>> {
         let mut cli_port = serialport::new(&self.cli_descriptor.0, self.cli_descriptor.1).open()?;
         let data_port = serialport::new(&self.data_descriptor.0, self.data_descriptor.1).open()?;
 
@@ -274,10 +278,44 @@ impl RadarDescriptor {
     }
 }
 
-enum RadarReadResult {
-    Good(String, RadarInstance<ValidRadarInstance>),
-    Bad(RadarInstance<InvalidRadarInstance>),
-    Skipped(RadarInstance<ValidRadarInstance>),
+struct DataFrame {}
+
+struct RadarReadResult(RadarInstance<RadarFreshState>, DataFrame);
+
+impl RadarInstance<RadarReadyState> {
+    fn read(mut self) -> RadarReadResult {
+        (
+            RadarInstance {
+                descriptor: todo!(),
+                status: PhantomData::default(),
+                cli_port: todo!(),
+                data_port: todo!(),
+            },
+            DataFrame {},
+        )
+    }
+}
+
+enum RadarPollResult {
+    Finished(RadarInstance<RadarReadyState>),
+    Unfinished(RadarInstance<RadarReadingState>),
+    Disconnected(RadarInstance<RadarDisconnectedState>),
+}
+
+impl RadarInstance<RadarReadingState> {
+    fn try_poll(mut self) -> RadarPollResult {
+        todo!()
+    }
+}
+
+enum RadarStartupResult {
+    Begin(RadarInstance<RadarReadingState>),
+    Fail(RadarInstance<RadarFreshState>),
+    Disconnect(RadarInstance<RadarDisconnectedState>),
+}
+
+impl RadarInstance<RadarFreshState> {
+    fn try_start(mut self) -> RadarStartupResult {}
 }
 
 impl RadarInstance<ValidRadarInstance> {
