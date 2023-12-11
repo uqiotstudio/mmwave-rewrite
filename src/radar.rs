@@ -2,7 +2,7 @@ use serde::de::{DeserializeOwned, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serialport::SerialPort;
 use std::collections::VecDeque;
-use std::fmt;
+use std::fmt::{self, Debug};
 use std::marker::PhantomData;
 use std::{error::Error, fs::File, io::Read, thread, time};
 
@@ -67,27 +67,34 @@ impl RadarDescriptor {
         }
 
         let radar_descriptor = self;
-        let buffer = Vec::new();
 
         let radar = Radar {
             radar_descriptor,
             cli_port,
             data_port,
             config,
-            buffer,
         };
 
         Ok(radar)
     }
 }
 
-#[derive(Debug)]
 pub struct Radar {
     radar_descriptor: RadarDescriptor,
     cli_port: Box<dyn SerialPort>,
     data_port: Box<dyn SerialPort>,
     config: String,
-    buffer: Vec<u8>,
+}
+
+impl fmt::Debug for Radar {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Radar")
+            .field("radar_descriptor", &self.radar_descriptor)
+            .field("cli_port", &self.cli_port)
+            .field("data_port", &self.data_port)
+            .field("config", &self.config)
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -134,6 +141,14 @@ impl Radar {
         }
     }
 
+    /// Ensures there are at least n bytes in the buffer, reading new ones to fill empty space
+    fn read_n_bytes(&mut self, n: usize) -> Result<Vec<u8>, std::io::Error> {
+        let mut buffer = vec![0; n];
+        while (self.data_port.bytes_to_read().unwrap_or(0) as usize) < n {} // Block until available
+        self.data_port.read(&mut buffer)?;
+        Ok(buffer)
+    }
+
     /// Reads from the radar to get the next buffered frame. Frames are never skipped, so if called infrequently this can lead to a large backlog (however much the serial port can back up).
     ///
     /// # Errors
@@ -141,73 +156,90 @@ impl Radar {
     /// In the event of a error regarding the serial ports, a [`RadarReadResult::Disconnected`] is returned and will require reconnection. In the event of a malformed message the radar is recoverable through the returned [`RadarReadResult::Malformed`].
     pub fn read(mut self) -> RadarReadResult {
         // Find magic number else block & grow buffer until buffer contains magic number
+        dbg!("Beginning Read");
 
-        let mut index: usize = loop {
-            let bytes_available = self.data_port.bytes_to_read().unwrap_or(0);
-            let mut temp_buffer = vec![0; bytes_available as usize];
-            if let Err(e) = self.data_port.read(&mut temp_buffer) {
-                return RadarReadResult::Disconnected(self.radar_descriptor);
-            }
-
-            self.buffer.extend(temp_buffer);
-
-            match self
-                .buffer
-                .windows(std::mem::size_of_val(&MAGICWORD))
-                .position(|window| {
-                    window
-                        == MAGICWORD
-                            .iter()
-                            .flat_map(|&x| x.to_ne_bytes().to_vec())
-                            .collect::<Vec<u8>>()
-                }) {
-                Some(index) => break index,
-                // In the event of None, drain all but the last MAGICWORD::memsize worth of elements
-                // as they are irrelevant going forwards
-                None => self.buffer.drain(
-                    0..(self.buffer.len()
-                        - std::mem::size_of_val(&MAGICWORD).min(self.buffer.len())),
-                ),
+        let mut buffer = match self.read_n_bytes(std::mem::size_of_val(&MAGICWORD)) {
+            Ok(buffer) => buffer,
+            Err(e) => return RadarReadResult::Disconnected(self.radar_descriptor),
+        };
+        while buffer
+            != MAGICWORD
+                .iter()
+                .flat_map(|&x| x.to_ne_bytes().to_vec())
+                .collect::<Vec<u8>>()
+        {
+            let new_byte = match self.read_n_bytes(1) {
+                Ok(buffer) => buffer,
+                Err(e) => return RadarReadResult::Disconnected(self.radar_descriptor),
             };
-        };
-
-        self.buffer.drain(0..index); // The buffer now starts at the magic word
-
-        // Block, growing the buffer from the magic number, until we can form a header
-        while (self.data_port.bytes_to_read().unwrap_or(0) as usize)
-            < std::mem::size_of::<FrameHeader>()
-        {}
-
-        // Load those bytes into the buffer
-        let bytes_available = self.data_port.bytes_to_read().unwrap_or(0);
-        let mut temp_buffer = vec![0; bytes_available as usize];
-        if let Err(e) = self.data_port.read(&mut temp_buffer) {
-            return RadarReadResult::Disconnected(self.radar_descriptor);
-        };
-        self.buffer.extend(temp_buffer);
-
-        // Deserialize the header
-        let Ok(header) = FrameHeader::from_bytes(&self.buffer) else {
-            return RadarReadResult::Malformed(self);
-        };
-
-        // Trim the header out of the buffer
-        self.buffer.drain(..std::mem::size_of::<FrameHeader>());
-
-        // Block until the size described by header is available.
-
-        let body_length = header.packet_length as usize - std::mem::size_of::<FrameHeader>();
-
-        while self.buffer.len() < body_length {
-            let bytes_available = self.data_port.bytes_to_read().unwrap_or(0);
-            let mut temp_buffer = vec![0; bytes_available as usize];
-            if let Err(e) = self.data_port.read(&mut temp_buffer) {
-                return RadarReadResult::Disconnected(self.radar_descriptor);
-            };
-            self.buffer.extend(temp_buffer);
+            // Shift the bytes by one
+            // TODO probably could optimize this using VecDequeue, seems unecessary
+            buffer.extend(new_byte);
+            buffer.remove(0);
         }
 
-        // TODO fill this out
+        // Grow the buffer from the magic number, until we can form a header
+        let mut new_buffer = match self
+            .read_n_bytes(std::mem::size_of::<FrameHeader>() - std::mem::size_of_val(&MAGICWORD))
+        {
+            Ok(mut new_buffer) => new_buffer,
+            Err(e) => {
+                eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
+                return RadarReadResult::Disconnected(self.radar_descriptor);
+            }
+        };
+        buffer.extend(new_buffer);
+
+        // Deserialize the header
+        let header = match FrameHeader::from_bytes(&buffer) {
+            Ok(header) => header,
+            Err(e) => {
+                eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
+                return RadarReadResult::Malformed(self);
+            }
+        };
+
+        dbg!(&header);
+
+        // Block until the size described by header is available.
+        let body_length = header.packet_length as usize - std::mem::size_of::<FrameHeader>();
+        let mut buffer = match self.read_n_bytes(body_length) {
+            Ok(mut buffer) => buffer,
+            Err(e) => {
+                eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
+                return RadarReadResult::Disconnected(self.radar_descriptor);
+            }
+        };
+
+        // Populate the body with tlvs!
+        let mut body: Vec<TLV> = Vec::new();
+        let mut tlvs_remaining = header.num_tlvs;
+        while tlvs_remaining > 0 {
+            dbg!(tlvs_remaining);
+            let tlv = match TLV::from_bytes(&buffer) {
+                Ok(tlv) => tlv,
+                Err(e) => {
+                    eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
+                    return RadarReadResult::Malformed(self);
+                }
+            };
+            dbg!("complete");
+            dbg!(std::mem::size_of_val(&tlv));
+            dbg!(std::mem::size_of::<TLVHeader>());
+            dbg!(std::mem::size_of::<TLVType>());
+            dbg!(std::mem::size_of::<TLVHeader>() as u32 + tlv.header.length);
+            buffer.drain(0..(std::mem::size_of::<TLVHeader>() + tlv.header.length as usize));
+            body.push(tlv);
+            tlvs_remaining -= 1;
+        }
+
+        RadarReadResult::Success(
+            self,
+            Frame {
+                header: header,
+                body: body,
+            },
+        )
     }
 }
 
@@ -252,40 +284,125 @@ pub struct Frame {
     body: Vec<TLV>,
 }
 
-#[derive(Deserialize, Debug)]
-struct NdVec<T: Serialize + DeserializeOwned, const N: usize> {
-    #[serde(with = "serde_arrays")]
-    data: [T; N],
+trait FromBytes: Sized {
+    fn from_bytes(bytes: &[u8]) -> Option<Self>;
 }
 
-#[derive(Deserialize, Debug)]
+impl FromBytes for u8 {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() >= 1 {
+            Some(bytes[0])
+        } else {
+            None
+        }
+    }
+}
+
+impl<T: Default + Copy + FromBytes, const N: usize> FromBytes for [T; N] {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        let item_size = std::mem::size_of::<T>();
+        if bytes.len() < item_size * N {
+            return None; // Not enough bytes to fill the array
+        }
+
+        let mut data: [T; N] = [T::default(); N]; // Initialize array with default values
+
+        for (i, chunk) in bytes.chunks(item_size).enumerate().take(N) {
+            if let Some(item) = T::from_bytes(chunk) {
+                data[i] = item;
+            } else {
+                return None; // Conversion failed
+            }
+        }
+
+        Some(data)
+    }
+}
+
+#[derive(Debug)]
 struct TLVPointCloud {
-    points: Vec<NdVec<u32, 4>>, // Vector of points, (x, y, z, doppler)
+    points: Vec<[u32; 4]>, // Vector of points, (x, y, z, doppler)
 }
 
-#[derive(Deserialize, Debug)]
+impl FromBytes for TLVPointCloud {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
 struct TLVRangeProfile {
-    #[serde(deserialize_with = "custom_vec_deserializer::<_, u16, 2>")]
-    points: Vec<NdVec<u16, 2>>,
+    points: Vec<[u8; 2]>,
 }
 
-#[derive(Deserialize, Debug)]
+impl FromBytes for TLVRangeProfile {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        let item_size = std::mem::size_of::<[u8; 2]>();
+        let mut items = Vec::new();
+        for i in 0..(bytes.len() / item_size) {
+            if let Some(ndvec) = <[u8; 2]>::from_bytes(&bytes[i * item_size..(i + 1) * item_size]) {
+                items.push(ndvec);
+            } else {
+                return None;
+            }
+        }
+        Some(Self { points: items })
+    }
+}
+
+#[derive(Debug)]
 struct TLVNoiseProfile {}
 
-#[derive(Deserialize, Debug)]
+impl FromBytes for TLVNoiseProfile {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
 struct TLVStaticAzimuthHeatmap {}
 
-#[derive(Deserialize, Debug)]
+impl FromBytes for TLVStaticAzimuthHeatmap {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
 struct TLVRangeDopplerHeatmap {}
 
-#[derive(Deserialize, Debug)]
+impl FromBytes for TLVRangeDopplerHeatmap {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
 struct TLVStatistics {}
 
-#[derive(Deserialize, Debug)]
+impl FromBytes for TLVStatistics {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
 struct TLVSideInfo {}
 
-#[derive(Deserialize, Debug)]
+impl FromBytes for TLVSideInfo {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
 struct TLVAzimuthElevationStaticHeatmap {}
+
+impl FromBytes for TLVAzimuthElevationStaticHeatmap {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        todo!()
+    }
+}
 
 #[derive(Debug)]
 enum TLVBody {
@@ -312,46 +429,47 @@ enum TLVType {
     SideInfo = 7,
     AzimuthElevationStaticHeatmap = 8,
     Temperature = 9,
-    Unknown(u32), // This is for memory safety reasons, and conveniently forces us to handle invalid state
+    // Unknown(u32), // This is for memory safety reasons but breaks the representation. Uh Oh!
 }
 
-fn custom_vec_deserializer<'de, D, T, const N: usize>(
-    deserializer: D,
-) -> Result<Vec<NdVec<T, N>>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Serialize + DeserializeOwned,
-{
-    struct VecVisitor<T, const N: usize>
-    where
-        T: Serialize + DeserializeOwned,
-    {
-        marker: PhantomData<NdVec<T, N>>,
+impl TLV {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
+        let start_index = std::mem::size_of::<TLVHeader>();
+        let header: TLVHeader = bincode::deserialize(&bytes[..start_index])?;
+        dbg!(&header);
+        let body = match || -> Option<TLVBody> {
+            Some(match header.tlv_type {
+                TLVType::PointCloud => TLVBody::PointCloud(TLVPointCloud::from_bytes(
+                    &bytes[start_index..start_index + header.length as usize],
+                )?),
+                TLVType::RangeProfile => TLVBody::RangeProfile(TLVRangeProfile::from_bytes(
+                    &bytes[start_index..start_index + header.length as usize],
+                )?),
+                TLVType::NoiseProfile => TLVBody::NoiseProfile(TLVNoiseProfile::from_bytes(
+                    &bytes[start_index..start_index + header.length as usize],
+                )?),
+                TLVType::StaticAzimuthHeatmap => {
+                    TLVBody::StaticAzimuthHeatmap(TLVStaticAzimuthHeatmap::from_bytes(
+                        &bytes[start_index..start_index + header.length as usize],
+                    )?)
+                }
+                TLVType::RangeDopplerHeatmap => {
+                    TLVBody::RangeDopplerHeatmap(TLVRangeDopplerHeatmap::from_bytes(
+                        &bytes[start_index..start_index + header.length as usize],
+                    )?)
+                }
+                TLVType::Statistics => TLVBody::Statistics(TLVStatistics::from_bytes(
+                    &bytes[start_index..start_index + header.length as usize],
+                )?),
+                TLVType::SideInfo => TLVBody::SideInfo(TLVSideInfo::from_bytes(
+                    &bytes[start_index..start_index + header.length as usize],
+                )?),
+                _ => panic!(), // This should never happen so just crash.
+            })
+        }() {
+            Some(body) => body,
+            _ => return Err("".into()),
+        };
+        Ok(Self { header, body })
     }
-
-    impl<'de, T: Serialize + DeserializeOwned, const N: usize> Visitor<'de> for VecVisitor<T, N> {
-        type Value = Vec<NdVec<T, N>>;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a sequence of arrays")
-        }
-
-        fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error>
-        where
-            S: SeqAccess<'de>,
-        {
-            let mut vec = Vec::new();
-
-            while let Some(array) = seq.next_element::<NdVec<T, N>>()? {
-                vec.push(array);
-            }
-
-            Ok(vec)
-        }
-    }
-
-    let visitor = VecVisitor {
-        marker: PhantomData,
-    };
-    deserializer.deserialize_seq(visitor)
 }
