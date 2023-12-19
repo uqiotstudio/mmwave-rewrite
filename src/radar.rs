@@ -156,8 +156,6 @@ impl Radar {
     /// In the event of a error regarding the serial ports, a [`RadarReadResult::Disconnected`] is returned and will require reconnection. In the event of a malformed message the radar is recoverable through the returned [`RadarReadResult::Malformed`].
     pub fn read(mut self) -> RadarReadResult {
         // Find magic number else block & grow buffer until buffer contains magic number
-        dbg!("Beginning Read");
-
         let mut buffer = match self.read_n_bytes(std::mem::size_of_val(&MAGICWORD)) {
             Ok(buffer) => buffer,
             Err(e) => return RadarReadResult::Disconnected(self.radar_descriptor),
@@ -199,8 +197,6 @@ impl Radar {
             }
         };
 
-        dbg!(&header);
-
         // Block until the size described by header is available.
         let body_length = header.packet_length as usize - std::mem::size_of::<FrameHeader>();
         let mut buffer = match self.read_n_bytes(body_length) {
@@ -211,12 +207,12 @@ impl Radar {
             }
         };
 
+        dbg!(&header);
+
         // Populate the body with tlvs!
         let mut body: Vec<TLV> = Vec::new();
         let mut tlvs_remaining = header.num_tlvs;
         while tlvs_remaining > 0 {
-            dbg!(tlvs_remaining);
-            dbg!(buffer.len());
             let tlv = match TLV::from_bytes(&buffer) {
                 Ok(tlv) => tlv,
                 Err(e) => {
@@ -224,24 +220,17 @@ impl Radar {
                     return RadarReadResult::Malformed(self);
                 }
             };
-            dbg!("complete");
-            dbg!(std::mem::size_of_val(&tlv));
-            dbg!(std::mem::size_of::<TLVHeader>());
-            dbg!(std::mem::size_of::<TLVType>());
-            dbg!(std::mem::size_of::<TLVHeader>() as u32 + tlv.header.length);
-            dbg!(tlv.header.length);
+            // dbg!(&tlv.header.tlv_type);
+            dbg!(&tlv.header.length);
+            dbg!(std::mem::size_of_val(&tlv.header));
             buffer.drain(0..(std::mem::size_of::<TLVHeader>() + tlv.header.length as usize));
             body.push(tlv);
             tlvs_remaining -= 1;
         }
 
-        RadarReadResult::Success(
-            self,
-            Frame {
-                header: header,
-                body: body,
-            },
-        )
+        dbg!(buffer.len());
+
+        RadarReadResult::Success(self, Frame { header, body })
     }
 }
 
@@ -517,10 +506,7 @@ enum TLVType {
 impl TLV {
     fn from_bytes(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
         let start_index = std::mem::size_of::<TLVHeader>();
-        dbg!(bytes.len());
-        dbg!(start_index);
         let header: TLVHeader = bincode::deserialize(&bytes[..start_index])?;
-        dbg!(&header);
         let body = match || -> Option<TLVBody> {
             Some(match header.tlv_type {
                 TLVType::PointCloud => TLVBody::PointCloud(TLVPointCloud::from_bytes(
