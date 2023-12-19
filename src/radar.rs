@@ -224,11 +224,10 @@ impl Radar {
             dbg!(&tlv.header.length);
             dbg!(std::mem::size_of_val(&tlv.header));
             buffer.drain(0..(std::mem::size_of::<TLVHeader>() + tlv.header.length as usize));
+            dbg!(buffer.len());
             body.push(tlv);
             tlvs_remaining -= 1;
         }
-
-        dbg!(buffer.len());
 
         RadarReadResult::Success(self, Frame { header, body })
     }
