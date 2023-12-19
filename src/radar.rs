@@ -216,6 +216,7 @@ impl Radar {
         let mut tlvs_remaining = header.num_tlvs;
         while tlvs_remaining > 0 {
             dbg!(tlvs_remaining);
+            dbg!(buffer.len());
             let tlv = match TLV::from_bytes(&buffer) {
                 Ok(tlv) => tlv,
                 Err(e) => {
@@ -228,6 +229,7 @@ impl Radar {
             dbg!(std::mem::size_of::<TLVHeader>());
             dbg!(std::mem::size_of::<TLVType>());
             dbg!(std::mem::size_of::<TLVHeader>() as u32 + tlv.header.length);
+            dbg!(tlv.header.length);
             buffer.drain(0..(std::mem::size_of::<TLVHeader>() + tlv.header.length as usize));
             body.push(tlv);
             tlvs_remaining -= 1;
