@@ -353,20 +353,44 @@ impl FromBytes for TLVRangeProfile {
 }
 
 #[derive(Debug)]
-struct TLVNoiseProfile {}
+struct TLVNoiseProfile {
+    data: Vec<u32>,
+}
 
 impl FromBytes for TLVNoiseProfile {
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        todo!()
+        const ITEM_SIZE: usize = std::mem::size_of::<u32>();
+        let mut items = Vec::new();
+        for i in 0..(bytes.len() / ITEM_SIZE) {
+            if let Some(ndvec) =
+                <[u8; ITEM_SIZE]>::from_bytes(&bytes[i * ITEM_SIZE..(i + 1) * ITEM_SIZE])
+            {
+                items.push(u32::from_ne_bytes(ndvec));
+            } else {
+                return None;
+            }
+        }
+        Some(Self { data: items })
     }
 }
 
 #[derive(Debug)]
-struct TLVStaticAzimuthHeatmap {}
+struct TLVStaticAzimuthHeatmap {
+    data: Vec<[u8; 4]>,
+}
 
 impl FromBytes for TLVStaticAzimuthHeatmap {
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        todo!()
+        const ITEM_SIZE: usize = std::mem::size_of::<[u8; 4]>();
+        let mut items = Vec::new();
+        for i in 0..(bytes.len() / ITEM_SIZE) {
+            if let Some(ndvec) = <[u8; 4]>::from_bytes(&bytes[i * ITEM_SIZE..(i + 1) * ITEM_SIZE]) {
+                items.push(ndvec);
+            } else {
+                return None;
+            }
+        }
+        Some(Self { data: items })
     }
 }
 
@@ -389,24 +413,48 @@ impl FromBytes for TLVStatistics {
 }
 
 #[derive(Debug)]
-struct TLVSideInfo {}
+struct TLVSideInfo {
+    data: Vec<(u16, u16)>,
+}
 
 impl FromBytes for TLVSideInfo {
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        todo!()
+        const ITEM_SIZE: usize = std::mem::size_of::<(u16, u16)>();
+        let mut items = Vec::new();
+        for i in 0..(bytes.len() / ITEM_SIZE) {
+            if let Some(ndvec) = <[u8; 4]>::from_bytes(&bytes[i * ITEM_SIZE..(i + 1) * ITEM_SIZE]) {
+                items.push((
+                    u16::from_ne_bytes([ndvec[0], ndvec[1]]),
+                    u16::from_ne_bytes([ndvec[2], ndvec[3]]),
+                ));
+            } else {
+                return None;
+            }
+        }
+        Some(Self { data: items })
     }
 }
 
 #[derive(Debug)]
-struct TLVAzimuthElevationStaticHeatmap {}
+struct TLVAzimuthElevationStaticHeatmap {
+    data: Vec<[u8; 4]>,
+}
 
 impl FromBytes for TLVAzimuthElevationStaticHeatmap {
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        todo!()
+        let item_size = std::mem::size_of::<[u8; 4]>();
+        let mut items = Vec::new();
+        for i in 0..(bytes.len() / item_size) {
+            if let Some(ndvec) = <[u8; 4]>::from_bytes(&bytes[i * item_size..(i + 1) * item_size]) {
+                items.push(ndvec);
+            } else {
+                return None;
+            }
+        }
+        Some(Self { data: items })
     }
 }
 
-#[derive(Debug)]
 enum TLVBody {
     PointCloud(TLVPointCloud),
     RangeProfile(TLVRangeProfile),
@@ -416,6 +464,38 @@ enum TLVBody {
     Statistics(TLVStatistics),
     SideInfo(TLVSideInfo),
     AzimuthElevationStaticHeatmap(TLVAzimuthElevationStaticHeatmap),
+}
+
+impl fmt::Debug for TLVBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TLVBody::PointCloud(t) => f
+                .debug_tuple("PointCloud Len")
+                .field(&t.points.len())
+                .finish(),
+            TLVBody::RangeProfile(t) => f
+                .debug_tuple("RangeProfile Len")
+                .field(&t.points.len())
+                .finish(),
+            TLVBody::NoiseProfile(t) => f
+                .debug_tuple("NoiseProfile Len")
+                .field(&t.data.len())
+                .finish(),
+            TLVBody::StaticAzimuthHeatmap(t) => f
+                .debug_tuple("StaticAzimuthHeatmap Len")
+                .field(&t.data.len())
+                .finish(),
+            TLVBody::RangeDopplerHeatmap(t) => {
+                f.debug_tuple("RangeDopplerHeatmap Len").field(&t).finish()
+            }
+            TLVBody::Statistics(t) => f.debug_tuple("Statistics").field(t).finish(),
+            TLVBody::SideInfo(t) => f.debug_tuple("SideInfo Len").field(&t.data.len()).finish(),
+            TLVBody::AzimuthElevationStaticHeatmap(t) => f
+                .debug_tuple("AzimuthElevationStaticHeatmap Len")
+                .field(&t.data.len())
+                .finish(),
+        }
+    }
 }
 
 #[repr(u32)]
@@ -437,6 +517,8 @@ enum TLVType {
 impl TLV {
     fn from_bytes(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
         let start_index = std::mem::size_of::<TLVHeader>();
+        dbg!(bytes.len());
+        dbg!(start_index);
         let header: TLVHeader = bincode::deserialize(&bytes[..start_index])?;
         dbg!(&header);
         let body = match || -> Option<TLVBody> {
@@ -466,7 +548,12 @@ impl TLV {
                 TLVType::SideInfo => TLVBody::SideInfo(TLVSideInfo::from_bytes(
                     &bytes[start_index..start_index + header.length as usize],
                 )?),
-                _ => panic!(), // This should never happen so just crash.
+                TLVType::AzimuthElevationStaticHeatmap => TLVBody::AzimuthElevationStaticHeatmap(
+                    TLVAzimuthElevationStaticHeatmap::from_bytes(
+                        &bytes[start_index..start_index + header.length as usize],
+                    )?,
+                ),
+                _ => panic!("Attempted to parse undefined TLV, please define it."), // This should never happen so just crash.
             })
         }() {
             Some(body) => body,

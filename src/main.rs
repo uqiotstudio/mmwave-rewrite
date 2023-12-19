@@ -30,7 +30,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match radar_instance.read() {
             RadarReadResult::Success(radar, frame) => {
                 radar_instance = radar;
-                dbg!(&frame);
+                // dbg!(&frame);
+            }
+            RadarReadResult::Malformed(radar) => {
+                radar_instance = radar;
+                eprintln!("Hit Malformed Frame, Skipping!");
             }
             e => {
                 dbg!(&e);
