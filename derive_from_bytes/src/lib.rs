@@ -16,13 +16,20 @@ pub fn from_bytes_derive(input: TokenStream) -> TokenStream {
                     let mut field_init = Vec::new();
                     let index_quote = quote! { let mut index: usize = 0; };
 
-                    for f in fields.named.iter() {
+                    let mut iterator = fields.named.iter().peekable();
+                    while let Some(f) = iterator.next() {
                         let name = &f.ident;
                         let ty = &f.ty;
+                        let width = if iterator.peek().is_none() {
+                            // The next element is none so use ALL bytes
+                            quote! { index.. }
+                        } else {
+                            quote! { index..index+<#ty>::size_of() }
+                        };
                         let field_quote = quote! {
                             #name: {
-                                let parsed = <#ty as FromBytes>::from_bytes(&bytes[index..index + std::mem::size_of::<#ty>()]);
-                                index += std::mem::size_of::<#ty>();
+                                let parsed = <#ty as FromBytes>::from_bytes(&bytes[#width]);
+                                index += <#ty>::size_of();
                                 parsed?
                             }
                         };
