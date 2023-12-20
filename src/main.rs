@@ -1,3 +1,4 @@
+mod message;
 mod radar;
 use radar::RadarDescriptor;
 

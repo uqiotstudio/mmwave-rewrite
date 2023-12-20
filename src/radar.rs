@@ -1,3 +1,4 @@
+use crate::message::{Frame, FrameHeader, FromBytes};
 use serde::de::{DeserializeOwned, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serialport::SerialPort;
@@ -149,11 +150,6 @@ impl Radar {
         Ok(buffer)
     }
 
-    /// Reads from the radar to get the next buffered frame. Frames are never skipped, so if called infrequently this can lead to a large backlog (however much the serial port can back up).
-    ///
-    /// # Errors
-    ///
-    /// In the event of a error regarding the serial ports, a [`RadarReadResult::Disconnected`] is returned and will require reconnection. In the event of a malformed message the radar is recoverable through the returned [`RadarReadResult::Malformed`].
     pub fn read(mut self) -> RadarReadResult {
         // Find magic number else block & grow buffer until buffer contains magic number
         let mut buffer = match self.read_n_bytes(std::mem::size_of_val(&MAGICWORD)) {
@@ -177,19 +173,18 @@ impl Radar {
         }
 
         // Grow the buffer from the magic number, until we can form a header
-        let mut new_buffer = match self
-            .read_n_bytes(std::mem::size_of::<FrameHeader>() - std::mem::size_of_val(&MAGICWORD))
-        {
-            Ok(mut new_buffer) => new_buffer,
-            Err(e) => {
-                eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
-                return RadarReadResult::Disconnected(self.radar_descriptor);
-            }
-        };
+        let mut new_buffer =
+            match self.read_n_bytes(FrameHeader::size_of() - std::mem::size_of_val(&MAGICWORD)) {
+                Ok(mut new_buffer) => new_buffer,
+                Err(e) => {
+                    eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
+                    return RadarReadResult::Disconnected(self.radar_descriptor);
+                }
+            };
         buffer.extend(new_buffer);
 
         // Deserialize the header
-        let header = match FrameHeader::from_bytes(&buffer) {
+        let header: FrameHeader = match FrameHeader::from_bytes(&buffer) {
             Ok(header) => header,
             Err(e) => {
                 eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
@@ -197,353 +192,26 @@ impl Radar {
             }
         };
 
-        // Block until the size described by header is available.
-        let body_length = header.packet_length as usize - std::mem::size_of::<FrameHeader>();
-        let mut buffer = match self.read_n_bytes(body_length) {
-            Ok(mut buffer) => buffer,
-            Err(e) => {
-                eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
-                return RadarReadResult::Disconnected(self.radar_descriptor);
-            }
-        };
-
-        dbg!(&header);
-
-        // Populate the body with tlvs!
-        let mut body: Vec<TLV> = Vec::new();
-        let mut tlvs_remaining = header.num_tlvs;
-        while tlvs_remaining > 0 {
-            let tlv = match TLV::from_bytes(&buffer) {
-                Ok(tlv) => tlv,
+        buffer.extend(
+            match self.read_n_bytes(header.packet_length as usize - FrameHeader::size_of()) {
+                Ok(bytes) => bytes,
                 Err(e) => {
                     eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
                     return RadarReadResult::Malformed(self);
                 }
-            };
-            // dbg!(&tlv.header.tlv_type);
-            dbg!(&tlv.header.length);
-            dbg!(std::mem::size_of_val(&tlv.header));
-            buffer.drain(0..(std::mem::size_of::<TLVHeader>() + tlv.header.length as usize));
-            dbg!(buffer.len());
-            body.push(tlv);
-            tlvs_remaining -= 1;
-        }
+            },
+        );
 
-        RadarReadResult::Success(self, Frame { header, body })
-    }
-}
-
-#[derive(Deserialize, Debug)]
-struct FrameHeader {
-    magic_word: [u16; 4],
-    version: u32,
-    packet_length: u32,
-    platform: u32,
-    frame_number: u32,
-    time: u32,
-    num_detected: u32,
-    num_tlvs: u32,
-    subframe_num: u32,
-}
-
-impl FrameHeader {
-    fn from_bytes(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-        if bytes.len() < std::mem::size_of::<FrameHeader>() {
-            return Err("Byte slice is too short to parse a FrameHeader".into());
-        }
-
-        Ok(bincode::deserialize(bytes)?)
-    }
-}
-
-#[derive(Deserialize, Debug)]
-struct TLVHeader {
-    tlv_type: TLVType,
-    length: u32,
-}
-
-#[derive(Debug)]
-struct TLV {
-    header: TLVHeader,
-    body: TLVBody,
-}
-
-#[derive(Debug)]
-pub struct Frame {
-    header: FrameHeader,
-    body: Vec<TLV>,
-}
-
-trait FromBytes: Sized {
-    fn from_bytes(bytes: &[u8]) -> Option<Self>;
-}
-
-impl FromBytes for u8 {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() >= 1 {
-            Some(bytes[0])
-        } else {
-            None
-        }
-    }
-}
-
-impl<T: Default + Copy + FromBytes, const N: usize> FromBytes for [T; N] {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        let item_size = std::mem::size_of::<T>();
-        if bytes.len() < item_size * N {
-            return None; // Not enough bytes to fill the array
-        }
-
-        let mut data: [T; N] = [T::default(); N]; // Initialize array with default values
-
-        for (i, chunk) in bytes.chunks(item_size).enumerate().take(N) {
-            if let Some(item) = T::from_bytes(chunk) {
-                data[i] = item;
-            } else {
-                return None; // Conversion failed
+        let frame = match Frame::from_bytes(&buffer) {
+            Ok(frame) => frame,
+            Err(e) => {
+                eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
+                return RadarReadResult::Malformed(self);
             }
-        }
-
-        Some(data)
-    }
-}
-
-#[derive(Debug)]
-struct TLVPointCloud {
-    points: Vec<[u32; 4]>, // Vector of points, (x, y, z, doppler)
-}
-
-impl FromBytes for TLVPointCloud {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        todo!()
-    }
-}
-
-#[derive(Debug)]
-struct TLVRangeProfile {
-    points: Vec<[u8; 2]>,
-}
-
-impl FromBytes for TLVRangeProfile {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        let item_size = std::mem::size_of::<[u8; 2]>();
-        let mut items = Vec::new();
-        for i in 0..(bytes.len() / item_size) {
-            if let Some(ndvec) = <[u8; 2]>::from_bytes(&bytes[i * item_size..(i + 1) * item_size]) {
-                items.push(ndvec);
-            } else {
-                return None;
-            }
-        }
-        Some(Self { points: items })
-    }
-}
-
-#[derive(Debug)]
-struct TLVNoiseProfile {
-    data: Vec<u32>,
-}
-
-impl FromBytes for TLVNoiseProfile {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        const ITEM_SIZE: usize = std::mem::size_of::<u32>();
-        let mut items = Vec::new();
-        for i in 0..(bytes.len() / ITEM_SIZE) {
-            if let Some(ndvec) =
-                <[u8; ITEM_SIZE]>::from_bytes(&bytes[i * ITEM_SIZE..(i + 1) * ITEM_SIZE])
-            {
-                items.push(u32::from_ne_bytes(ndvec));
-            } else {
-                return None;
-            }
-        }
-        Some(Self { data: items })
-    }
-}
-
-#[derive(Debug)]
-struct TLVStaticAzimuthHeatmap {
-    data: Vec<[u8; 4]>,
-}
-
-impl FromBytes for TLVStaticAzimuthHeatmap {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        const ITEM_SIZE: usize = std::mem::size_of::<[u8; 4]>();
-        let mut items = Vec::new();
-        for i in 0..(bytes.len() / ITEM_SIZE) {
-            if let Some(ndvec) = <[u8; 4]>::from_bytes(&bytes[i * ITEM_SIZE..(i + 1) * ITEM_SIZE]) {
-                items.push(ndvec);
-            } else {
-                return None;
-            }
-        }
-        Some(Self { data: items })
-    }
-}
-
-#[derive(Debug)]
-struct TLVRangeDopplerHeatmap {}
-
-impl FromBytes for TLVRangeDopplerHeatmap {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        todo!()
-    }
-}
-
-#[derive(Debug)]
-struct TLVStatistics {}
-
-impl FromBytes for TLVStatistics {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        todo!()
-    }
-}
-
-#[derive(Debug)]
-struct TLVSideInfo {
-    data: Vec<(u16, u16)>,
-}
-
-impl FromBytes for TLVSideInfo {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        const ITEM_SIZE: usize = std::mem::size_of::<(u16, u16)>();
-        let mut items = Vec::new();
-        for i in 0..(bytes.len() / ITEM_SIZE) {
-            if let Some(ndvec) = <[u8; 4]>::from_bytes(&bytes[i * ITEM_SIZE..(i + 1) * ITEM_SIZE]) {
-                items.push((
-                    u16::from_ne_bytes([ndvec[0], ndvec[1]]),
-                    u16::from_ne_bytes([ndvec[2], ndvec[3]]),
-                ));
-            } else {
-                return None;
-            }
-        }
-        Some(Self { data: items })
-    }
-}
-
-#[derive(Debug)]
-struct TLVAzimuthElevationStaticHeatmap {
-    data: Vec<[u8; 4]>,
-}
-
-impl FromBytes for TLVAzimuthElevationStaticHeatmap {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        let item_size = std::mem::size_of::<[u8; 4]>();
-        let mut items = Vec::new();
-        for i in 0..(bytes.len() / item_size) {
-            if let Some(ndvec) = <[u8; 4]>::from_bytes(&bytes[i * item_size..(i + 1) * item_size]) {
-                items.push(ndvec);
-            } else {
-                return None;
-            }
-        }
-        Some(Self { data: items })
-    }
-}
-
-enum TLVBody {
-    PointCloud(TLVPointCloud),
-    RangeProfile(TLVRangeProfile),
-    NoiseProfile(TLVNoiseProfile),
-    StaticAzimuthHeatmap(TLVStaticAzimuthHeatmap),
-    RangeDopplerHeatmap(TLVRangeDopplerHeatmap),
-    Statistics(TLVStatistics),
-    SideInfo(TLVSideInfo),
-    AzimuthElevationStaticHeatmap(TLVAzimuthElevationStaticHeatmap),
-}
-
-impl fmt::Debug for TLVBody {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TLVBody::PointCloud(t) => f
-                .debug_tuple("PointCloud Len")
-                .field(&t.points.len())
-                .finish(),
-            TLVBody::RangeProfile(t) => f
-                .debug_tuple("RangeProfile Len")
-                .field(&t.points.len())
-                .finish(),
-            TLVBody::NoiseProfile(t) => f
-                .debug_tuple("NoiseProfile Len")
-                .field(&t.data.len())
-                .finish(),
-            TLVBody::StaticAzimuthHeatmap(t) => f
-                .debug_tuple("StaticAzimuthHeatmap Len")
-                .field(&t.data.len())
-                .finish(),
-            TLVBody::RangeDopplerHeatmap(t) => {
-                f.debug_tuple("RangeDopplerHeatmap Len").field(&t).finish()
-            }
-            TLVBody::Statistics(t) => f.debug_tuple("Statistics").field(t).finish(),
-            TLVBody::SideInfo(t) => f.debug_tuple("SideInfo Len").field(&t.data.len()).finish(),
-            TLVBody::AzimuthElevationStaticHeatmap(t) => f
-                .debug_tuple("AzimuthElevationStaticHeatmap Len")
-                .field(&t.data.len())
-                .finish(),
-        }
-    }
-}
-
-#[repr(u32)]
-#[derive(Deserialize, Debug)]
-// The full list of TLVTypes can be found at https://dev.ti.com/tirex/explore/node?node=A__ADnbI7zK9bSRgZqeAxprvQ__radar_toolbox__1AslXXD__LATEST in case i need to implement more later on. Theres quite a few, in particular for *other* radar models that im skipping.
-enum TLVType {
-    PointCloud = 1,
-    RangeProfile = 2,
-    NoiseProfile = 3,
-    StaticAzimuthHeatmap = 4,
-    RangeDopplerHeatmap = 5,
-    Statistics = 6,
-    SideInfo = 7,
-    AzimuthElevationStaticHeatmap = 8,
-    Temperature = 9,
-    // Unknown(u32), // This is for memory safety reasons but breaks the representation. Uh Oh!
-}
-
-impl TLV {
-    fn from_bytes(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-        let start_index = std::mem::size_of::<TLVHeader>();
-        let header: TLVHeader = bincode::deserialize(&bytes[..start_index])?;
-        let body = match || -> Option<TLVBody> {
-            Some(match header.tlv_type {
-                TLVType::PointCloud => TLVBody::PointCloud(TLVPointCloud::from_bytes(
-                    &bytes[start_index..start_index + header.length as usize],
-                )?),
-                TLVType::RangeProfile => TLVBody::RangeProfile(TLVRangeProfile::from_bytes(
-                    &bytes[start_index..start_index + header.length as usize],
-                )?),
-                TLVType::NoiseProfile => TLVBody::NoiseProfile(TLVNoiseProfile::from_bytes(
-                    &bytes[start_index..start_index + header.length as usize],
-                )?),
-                TLVType::StaticAzimuthHeatmap => {
-                    TLVBody::StaticAzimuthHeatmap(TLVStaticAzimuthHeatmap::from_bytes(
-                        &bytes[start_index..start_index + header.length as usize],
-                    )?)
-                }
-                TLVType::RangeDopplerHeatmap => {
-                    TLVBody::RangeDopplerHeatmap(TLVRangeDopplerHeatmap::from_bytes(
-                        &bytes[start_index..start_index + header.length as usize],
-                    )?)
-                }
-                TLVType::Statistics => TLVBody::Statistics(TLVStatistics::from_bytes(
-                    &bytes[start_index..start_index + header.length as usize],
-                )?),
-                TLVType::SideInfo => TLVBody::SideInfo(TLVSideInfo::from_bytes(
-                    &bytes[start_index..start_index + header.length as usize],
-                )?),
-                TLVType::AzimuthElevationStaticHeatmap => TLVBody::AzimuthElevationStaticHeatmap(
-                    TLVAzimuthElevationStaticHeatmap::from_bytes(
-                        &bytes[start_index..start_index + header.length as usize],
-                    )?,
-                ),
-                _ => panic!("Attempted to parse undefined TLV, please define it."), // This should never happen so just crash.
-            })
-        }() {
-            Some(body) => body,
-            _ => return Err("".into()),
         };
-        Ok(Self { header, body })
+
+        dbg!(&frame);
+
+        RadarReadResult::Success(self, frame)
     }
 }
