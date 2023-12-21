@@ -8,7 +8,7 @@ use syn::{
     NestedMeta,
 };
 
-#[proc_macro_derive(FromBytes, attributes(Header, Body))]
+#[proc_macro_derive(FromBytes)]
 pub fn from_bytes_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match input.data {
@@ -34,7 +34,6 @@ fn process_named_fields(fields: &FieldsNamed, struct_name: &Ident) -> TokenStrea
         impl FromBytes for #struct_name {
             fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
                 let mut index: usize = 0;
-                let mut headers = std::collections::HashMap::<usize, usize>::new();
                 Ok(#struct_name {
                     #( #field_inits, )*
                 })
@@ -56,34 +55,10 @@ fn process_field(field: &Field, is_last: bool) -> proc_macro2::TokenStream {
             quote! { <#ty>::size_of() },
         )
     };
-    let mut header_quote = quote! {};
-
-    // Attributes may omdify header_quote and width_quote
-    for attr in &field.attrs {
-        let Ok(Meta::List(meta_list)) = attr.parse_meta() else {
-            continue;
-        };
-        for nested_meta in meta_list.nested {
-            let NestedMeta::Lit(Lit::Int(lit_int)) = nested_meta else {
-                continue;
-            };
-            let value: usize = lit_int.base10_parse::<usize>().unwrap();
-            if attr.path.is_ident("Header") {
-                header_quote = quote! {
-                    headers.insert(#value, parsed.get_body_length());
-                };
-            } else if attr.path.is_ident("Body") {
-                width = quote! {
-                    (index..(index+headers.get(&#value).unwrap()))
-                }
-            }
-        }
-    }
 
     quote! {
         #name: {
             let parsed = <#ty as FromBytes>::from_bytes(&bytes[#width])?;
-            #header_quote
             index += #size;
             parsed
         }

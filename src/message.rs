@@ -23,11 +23,6 @@ where
     }
 }
 
-trait Header {
-    // Returns the length in bytes of the associated body (excluding the header!!)
-    fn get_body_length(&self) -> usize;
-}
-
 impl FromBytes for u8 {
     fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
         if bytes.len() != 1 {
@@ -94,13 +89,16 @@ impl<T: Default + Copy + FromBytes, const N: usize> FromBytes for [T; N] {
 
 impl<T: FromBytes> FromBytes for Vec<T> {
     fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-        let mut index = 0;
-        let mut results = Vec::new();
-        while let Ok(t) = T::from_bytes(&bytes[index..]) {
-            index += t.size_of_val();
-            results.push(t);
+        let item_size = T::size_of();
+        if bytes.len() % item_size != 0 {
+            return Err(ParseError::DataLengthMismatch);
         }
-        Ok(results)
+        let mut items = Vec::new();
+        for i in 0..(bytes.len() / item_size) - 1 {
+            let element = T::from_bytes(&bytes[i * item_size..(i + 1) * item_size])?;
+            items.push(element);
+        }
+        Ok(items)
     }
 
     fn size_of_val(&self) -> usize {
@@ -109,11 +107,9 @@ impl<T: FromBytes> FromBytes for Vec<T> {
     }
 }
 
-#[derive(FromBytes, Debug)]
+#[derive(Debug)]
 pub struct Frame {
-    #[Header(1)]
     pub frame_header: FrameHeader,
-    #[Body(1)]
     pub frame_body: FrameBody,
 }
 
@@ -130,57 +126,52 @@ pub struct FrameHeader {
     pub subframe_num: u32,
 }
 
-impl Header for FrameHeader {
-    fn get_body_length(&self) -> usize {
-        self.packet_length as usize - std::mem::size_of::<Self>()
-    }
-}
-
-#[derive(FromBytes, Debug)]
+#[derive(Debug)]
 pub struct FrameBody {
     pub tlvs: Vec<Tlv>,
+}
+
+impl FrameBody {
+    pub fn from_bytes(bytes: &[u8], num_tlvs: usize) -> Result<FrameBody, ParseError> {
+        let mut tlvs = Vec::new();
+        let mut offset: usize = 0;
+        for i in 0..num_tlvs {
+            let tlv_header = TlvHeader::from_bytes(&bytes[offset..offset + TlvHeader::size_of()])?;
+            offset += std::mem::size_of::<TlvHeader>();
+
+            let bytes = &bytes[offset..offset + tlv_header.length as usize];
+
+            let tlv_body = match tlv_header.tlv_type {
+                TlvType::PointCloud => TlvBody::PointCloud(Vec::from_bytes(&bytes)?),
+                TlvType::RangeProfile => TlvBody::RangeProfile(Vec::from_bytes(&bytes)?),
+                TlvType::NoiseProfile => TlvBody::NoiseProfile(Vec::from_bytes(&bytes)?),
+                TlvType::StaticAzimuthHeatmap => {
+                    TlvBody::StatisticAzimuthHeatmap(Vec::from_bytes(&bytes)?)
+                }
+                TlvType::RangeDopplerHeatmap => TlvBody::RangeDopplerHeatmap,
+                TlvType::Statistics => TlvBody::Statistics,
+                TlvType::SideInfo => TlvBody::SideInfo(Vec::from_bytes(&bytes)?),
+                TlvType::AzimuthElevationStaticHeatmap => {
+                    TlvBody::AzimuthElevationStaticHeatmap(Vec::from_bytes(&bytes)?)
+                }
+                TlvType::Temperature => TlvBody::Temperature,
+            };
+
+            offset += tlv_header.length as usize;
+            tlvs.push(Tlv {
+                tlv_header,
+                tlv_body,
+            });
+        }
+
+        Ok(Self { tlvs })
+    }
 }
 
 #[derive(Debug)]
 pub struct Tlv {
     pub tlv_header: TlvHeader,
     pub tlv_body: TlvBody,
-}
-
-impl FromBytes for Tlv {
-    fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-        let mut index = 0;
-        let tlv_header = TlvHeader::from_bytes(&bytes[index..index + TlvHeader::size_of()])?;
-
-        // Get the byte slice for the body
-        index += TlvHeader::size_of();
-        let bytes = &bytes[index..index + tlv_header.length as usize];
-
-        let tlv_body = match tlv_header.tlv_type {
-            TlvType::PointCloud => TlvBody::PointCloud(Vec::from_bytes(&bytes)?),
-            TlvType::RangeProfile => TlvBody::RangeProfile(Vec::from_bytes(&bytes)?),
-            TlvType::NoiseProfile => TlvBody::NoiseProfile(Vec::from_bytes(&bytes)?),
-            TlvType::StaticAzimuthHeatmap => {
-                TlvBody::StatisticAzimuthHeatmap(Vec::from_bytes(&bytes)?)
-            }
-            TlvType::RangeDopplerHeatmap => TlvBody::RangeDopplerHeatmap,
-            TlvType::Statistics => TlvBody::Statistics,
-            TlvType::SideInfo => TlvBody::SideInfo(Vec::from_bytes(&bytes)?),
-            TlvType::AzimuthElevationStaticHeatmap => {
-                TlvBody::AzimuthElevationStaticHeatmap(Vec::from_bytes(&bytes)?)
-            }
-            TlvType::Temperature => TlvBody::Temperature,
-        };
-
-        Ok(Self {
-            tlv_header,
-            tlv_body,
-        })
-    }
-
-    fn size_of_val(&self) -> usize {
-        self.tlv_header.size_of_val() + self.tlv_body.size_of_val()
-    }
 }
 
 #[derive(Debug)]
@@ -196,31 +187,18 @@ pub enum TlvBody {
     Temperature,
 }
 
-impl TlvBody {
-    fn size_of_val(&self) -> usize {
-        match self {
-            TlvBody::PointCloud(v) => v.size_of_val(),
-            TlvBody::RangeProfile(v) => v.size_of_val(),
-            TlvBody::NoiseProfile(v) => v.size_of_val(),
-            TlvBody::StatisticAzimuthHeatmap(v) => v.size_of_val(),
-            TlvBody::RangeDopplerHeatmap => todo!(),
-            TlvBody::Statistics => todo!(),
-            TlvBody::SideInfo(v) => v.size_of_val(),
-            TlvBody::AzimuthElevationStaticHeatmap(v) => v.size_of_val(),
-            TlvBody::Temperature => todo!(),
-        }
-    }
-}
-
-#[derive(FromBytes, Debug)]
+#[derive(Debug)]
 pub struct TlvHeader {
     tlv_type: TlvType,
     length: u32,
 }
 
-impl Header for TlvHeader {
-    fn get_body_length(&self) -> usize {
-        self.length as usize
+impl FromBytes for TlvHeader {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
+        Ok(TlvHeader {
+            tlv_type: TlvType::from_bytes(&bytes[0..TlvType::size_of()])?,
+            length: u32::from_bytes(&bytes[TlvType::size_of()..TlvType::size_of() + 4])?,
+        })
     }
 }
 
@@ -261,5 +239,9 @@ impl FromBytes for TlvType {
                 _ => Err(ParseError::MalformedData),
             }
         }
+    }
+
+    fn size_of() -> usize {
+        4
     }
 }

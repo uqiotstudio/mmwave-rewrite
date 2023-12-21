@@ -1,4 +1,4 @@
-use crate::message::{Frame, FrameHeader, FromBytes};
+use crate::message::{Frame, FrameBody, FrameHeader, FromBytes};
 use serde::de::{DeserializeOwned, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serialport::SerialPort;
@@ -151,11 +151,13 @@ impl Radar {
     }
 
     pub fn read(mut self) -> RadarReadResult {
-        // Find magic number else block & grow buffer until buffer contains magic number
+        // Get a buffer of the size of the magic word
         let mut buffer = match self.read_n_bytes(std::mem::size_of_val(&MAGICWORD)) {
             Ok(buffer) => buffer,
             Err(e) => return RadarReadResult::Disconnected(self.radar_descriptor),
         };
+
+        // Keep shifting by one byte untill we can find the magic word
         while buffer
             != MAGICWORD
                 .iter()
@@ -173,18 +175,18 @@ impl Radar {
         }
 
         // Grow the buffer from the magic number, until we can form a header
-        let mut new_buffer =
+        buffer.extend(
             match self.read_n_bytes(FrameHeader::size_of() - std::mem::size_of_val(&MAGICWORD)) {
-                Ok(mut new_buffer) => new_buffer,
+                Ok(new_buffer) => new_buffer,
                 Err(e) => {
                     eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
                     return RadarReadResult::Disconnected(self.radar_descriptor);
                 }
-            };
-        buffer.extend(new_buffer);
+            },
+        );
 
         // Deserialize the header
-        let header: FrameHeader = match FrameHeader::from_bytes(&buffer) {
+        let frame_header: FrameHeader = match FrameHeader::from_bytes(&buffer) {
             Ok(header) => header,
             Err(e) => {
                 eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
@@ -192,22 +194,26 @@ impl Radar {
             }
         };
 
-        buffer.extend(
-            match self.read_n_bytes(header.packet_length as usize - FrameHeader::size_of()) {
+        buffer =
+            match self.read_n_bytes(frame_header.packet_length as usize - FrameHeader::size_of()) {
                 Ok(bytes) => bytes,
                 Err(e) => {
                     eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
                     return RadarReadResult::Malformed(self);
                 }
-            },
-        );
+            };
 
-        let frame = match Frame::from_bytes(&buffer) {
-            Ok(frame) => frame,
+        let frame_body = match FrameBody::from_bytes(&buffer, frame_header.num_tlvs as usize) {
+            Ok(frame_body) => frame_body,
             Err(e) => {
                 eprintln!("{:?}:{:?}: {:?}", file!(), line!(), e);
                 return RadarReadResult::Malformed(self);
             }
+        };
+
+        let frame = Frame {
+            frame_header,
+            frame_body,
         };
 
         dbg!(&frame);
