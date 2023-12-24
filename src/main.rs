@@ -1,6 +1,7 @@
 mod message;
 mod radar;
 use radar::RadarDescriptor;
+use std::time::Instant;
 
 use crate::radar::{PortDescriptor, RadarReadResult};
 
@@ -28,9 +29,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     radar_instance = radar_instance.write_config().unwrap();
 
     loop {
+        let now = Instant::now();
         match radar_instance.read() {
             RadarReadResult::Success(radar, frame) => {
                 radar_instance = radar;
+                let elapsed = now.elapsed();
+                dbg!(elapsed.as_millis());
                 // dbg!(&frame);
             }
             RadarReadResult::Malformed(radar) => {

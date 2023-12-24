@@ -6,7 +6,7 @@ mmwave rewrite
   -[] Connection loss handling
   -[] More stability/bug fixes
   -[] Better config writing
-  -[] Support for all possible TLVs
+  -[x] Support for all possible TLVs
   -[] Builtin pointcloud transformation
 2. Set up Dora Node which utilizes radar reader and publishes Data.
   -[] If possible, let commands be sent to the node to reconfigure the radar/transform.

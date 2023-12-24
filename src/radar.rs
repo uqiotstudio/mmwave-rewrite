@@ -1,13 +1,7 @@
 use crate::message::{Frame, FrameBody, FrameHeader, FromBytes};
-use serde::de::{DeserializeOwned, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
 use serialport::SerialPort;
-use std::collections::VecDeque;
 use std::fmt::{self, Debug};
-use std::marker::PhantomData;
 use std::{error::Error, fs::File, io::Read, thread, time};
-
-const MAGICWORD: [u16; 4] = [0x0102, 0x0304, 0x0506, 0x0708];
 
 #[derive(Debug)]
 pub struct PortDescriptor {
@@ -145,12 +139,16 @@ impl Radar {
     /// Ensures there are at least n bytes in the buffer, reading new ones to fill empty space
     fn read_n_bytes(&mut self, n: usize) -> Result<Vec<u8>, std::io::Error> {
         let mut buffer = vec![0; n];
+        dbg!("a");
         while (self.data_port.bytes_to_read().unwrap_or(0) as usize) < n {} // Block until available
         self.data_port.read(&mut buffer)?;
+        dbg!("b");
         Ok(buffer)
     }
 
     pub fn read(mut self) -> RadarReadResult {
+        const MAGICWORD: [u16; 4] = [0x0102, 0x0304, 0x0506, 0x0708];
+
         // Get a buffer of the size of the magic word
         let mut buffer = match self.read_n_bytes(std::mem::size_of_val(&MAGICWORD)) {
             Ok(buffer) => buffer,
@@ -169,7 +167,6 @@ impl Radar {
                 Err(e) => return RadarReadResult::Disconnected(self.radar_descriptor),
             };
             // Shift the bytes by one
-            // TODO probably could optimize this using VecDequeue, seems unecessary
             buffer.extend(new_byte);
             buffer.remove(0);
         }
@@ -216,7 +213,9 @@ impl Radar {
             frame_body,
         };
 
-        dbg!(&frame);
+        dbg!(&frame.frame_header);
+
+        // dbg!(&frame);
 
         RadarReadResult::Success(self, frame)
     }
