@@ -85,7 +85,7 @@ impl Connection {
         })
     }
 
-    fn read_n_bytes(mut self, n: usize) -> Result<(Self, Vec<u8>), RadarReadError> {
+    fn read_n_bytes(&mut self, n: usize) -> Result<Vec<u8>, RadarReadError> {
         let mut buffer = vec![0; n];
 
         let time = std::time::Instant::now();
@@ -96,17 +96,17 @@ impl Connection {
         } // Block until available, with timeout of 1000ms!
 
         match self.data_port.read(&mut buffer) {
-            Ok(_) => Ok((self, buffer)),
+            Ok(_) => Ok(buffer),
             Err(_) => Err(RadarReadError::Disconnected),
         }
     }
 
-    pub fn read_frame(mut self) -> Result<(Self, Frame), RadarReadError> {
+    pub fn read_frame(&mut self) -> Result<Frame, RadarReadError> {
         const MAGICWORD: [u16; 4] = [0x0102, 0x0304, 0x0506, 0x0708];
 
         // Get a buffer of the size of the magic word
         let mut buffer;
-        (self, buffer) = self.read_n_bytes(std::mem::size_of_val(&MAGICWORD))?;
+        buffer = self.read_n_bytes(std::mem::size_of_val(&MAGICWORD))?;
 
         // Keep shifting by one byte untill we can find the magic word
         while buffer
@@ -116,23 +116,22 @@ impl Connection {
                 .collect::<Vec<u8>>()
         {
             let new_byte;
-            (self, new_byte) = self.read_n_bytes(1)?;
+            new_byte = self.read_n_bytes(1)?;
             buffer.extend(new_byte);
             buffer.remove(0);
         }
 
         // Grow the buffer from the magic number, until we can form a header
         let extension;
-        (self, extension) =
+        extension =
             self.read_n_bytes(FrameHeader::size_of() - std::mem::size_of_val(&MAGICWORD))?;
         buffer.extend(extension);
 
         // Deserialize the header
-        let frame_header: FrameHeader =
+        let frame_header =
             FrameHeader::from_bytes(&buffer).map_err(|e| RadarReadError::ParseError(e))?;
 
-        (self, buffer) =
-            self.read_n_bytes(frame_header.packet_length as usize - FrameHeader::size_of())?;
+        buffer = self.read_n_bytes(frame_header.packet_length as usize - FrameHeader::size_of())?;
 
         let frame_body = FrameBody::from_bytes(&buffer, frame_header.num_tlvs as usize)
             .map_err(|e| RadarReadError::ParseError(e))?;
@@ -144,7 +143,7 @@ impl Connection {
 
         dbg!(&frame.frame_header);
 
-        Ok((self, frame))
+        Ok(frame)
     }
 
     pub fn send_command(mut self, command: String) -> Result<Self, RadarWriteError> {

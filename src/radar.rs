@@ -2,6 +2,7 @@ use crate::{connection, error::*};
 use crate::{connection::Connection, message::Frame};
 use rusb::{Context, UsbContext};
 use serialport::SerialPort;
+use std::error::Error;
 use std::{fs::File, io::Read};
 
 #[derive(Debug, Copy, Clone)]
@@ -51,70 +52,53 @@ pub struct Radar {
 }
 
 impl Radar {
-    // pub fn find_usb_device(&mut self) -> Option<(u16, u16)> {
-    //     let context = Context::new().unwrap();
-    //     let mut enumerator = Enumerator::new(&context).unwrap();
+    fn reset_device(&mut self) -> Result<(), Box<dyn Error>> {
+        eprintln!("Resetting Serial Device");
 
-    //     enumerator.match_subsystem("tty").unwrap();
+        for device in rusb::devices()?.iter() {
+            let device_desc = match device.device_descriptor() {
+                Ok(dd) => dd,
+                Err(_) => continue,
+            };
 
-    //     for device in enumerator.scan_devices().unwrap() {
-    //         let syspath = device.syspath();
-    //         let devnode = device.devnode();
+            let mut handle = match device.open() {
+                Ok(h) => h,
+                Err(_) => continue,
+            };
 
-    //         if let Some(devnode_path) = devnode {
-    //             if devnode_path == Path::new(&self.descriptor.cli_descriptor.path) {
-    //                 if let Some(vendor_id) = device.property_value("ID_VENDOR_ID") {
-    //                     if let Some(product_id) = device.property_value("ID_MODEL_ID") {
-    //                         let Ok(vendor_id) =
-    //                             u16::from_str_radix(&vendor_id.to_string_lossy(), 16)
-    //                         else {
-    //                             return None;
-    //                         };
-    //                         let Ok(product_id) =
-    //                             u16::from_str_radix(&product_id.to_string_lossy(), 16)
-    //                         else {
-    //                             return None;
-    //                         };
+            dbg!(&handle);
 
-    //                         return Some((vendor_id, product_id));
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
+            let serial_number = match handle.read_serial_number_string_ascii(&device_desc) {
+                Ok(sn) => sn,
+                Err(_) => continue,
+            };
 
-    //     return None;
-    // }
+            if serial_number == self.descriptor.serial {
+                handle.reset();
+            }
+        }
 
-    // pub fn reset_usb_device(&mut self) -> Result<(), Box<dyn Error>> {
-    //     let Some((vendor_id, product_id)) = self.find_usb_device() else {
-    //         return Err("usb device not found".into());
-    //     };
+        Ok(())
+    }
 
-    //     for device in rusb::devices()?.iter() {
-    //         let device_desc = device.device_descriptor()?;
-
-    //         if device_desc.vendor_id() == vendor_id && device_desc.product_id() == product_id {
-    //             eprintln!(
-    //                 "Found Device: {} - Vendor ID: {}, Product ID: {}, Resetting...",
-    //                 &self.descriptor.cli_descriptor.path, vendor_id, product_id
-    //             );
-    //             let mut handle = device.open()?;
-    //             let res = handle.reset()?;
-    //             std::thread::sleep(std::time::Duration::from_millis(100));
-    //             return Ok(());
-    //         }
-    //     }
-
-    //     Err(Box::new(rusb::Error::NoDevice))
-    // }
-
-    pub fn read_frame(mut self) -> (Option<Self>, Result<Frame, RadarReadError>) {
-        let (connection, frame) = match self.connection.read_frame() {
-            Ok((connection, frame)) => (connection, frame),
-            Err(e) => return (None, Err(e)),
+    pub fn reconnect(mut self) -> Self {
+        // Restart the device
+        let Ok(()) = self.reset_device() else {
+            return self;
         };
-        self.connection = connection;
-        (Some(self), Ok(frame))
+
+        // Attempt to craete a new instance, else give self back, still broken
+        self.descriptor.clone().try_initialize().unwrap_or(self)
+    }
+
+    // Err(Box::new(rusb::Error::NoDevice))
+    // }
+
+    pub fn read_frame(&mut self) -> Result<Frame, RadarReadError> {
+        let frame = match self.connection.read_frame() {
+            Ok(frame) => frame,
+            Err(e) => return Err(e),
+        };
+        Ok(frame)
     }
 }

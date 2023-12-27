@@ -23,41 +23,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     dbg!(&radar_instance);
 
+    let mut i = 0;
     loop {
+        dbg!(i);
+        i += 1;
         let now = Instant::now();
         match radar_instance.read_frame() {
-            (Some(radar), Ok(frame)) => {
+            Ok(frame) => {
                 // Got a frame and continue reading
                 dbg!(now.elapsed().as_millis());
-                radar_instance = radar;
             }
-            (None, Ok(frame)) => {
-                // The final frame before termination
-                dbg!(now.elapsed().as_millis());
-                break;
-            }
-            (Some(radar), Err(RadarReadError::ParseError(e))) => {
+            Err(RadarReadError::ParseError(e)) => {
                 dbg!(e);
-                radar_instance = radar;
             }
-            (None, Err(RadarReadError::ParseError(e))) => {
-                dbg!(e);
-                break;
-            }
-            (_, Err(RadarReadError::Disconnected))
-            | (_, Err(RadarReadError::NotConnected))
-            | (_, Err(RadarReadError::Timeout)) => {
-                // In this event
+            Err(RadarReadError::Disconnected)
+            | Err(RadarReadError::NotConnected)
+            | Err(RadarReadError::Timeout) => {
                 eprintln!("Connection to radar lost, attempting reconnection");
-                // Attempt a reconnection!
-                // dbg!(radar_instance.find_usb_device());
-                // dbg!(radar_instance.reset_usb_device());
-                // dbg!(radar_instance.connect());
-                // radar_instance.write_config();
-                radar_instance = radar_descriptor.clone().try_initialize().unwrap();
+                radar_instance = radar_instance.reconnect();
             }
         };
     }
-
-    Ok(())
 }
