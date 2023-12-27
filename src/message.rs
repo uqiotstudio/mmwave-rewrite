@@ -1,9 +1,4 @@
-#[derive(Debug)]
-pub enum ParseError {
-    DataLengthMismatch,
-    MalformedData,
-    UnimplementedTlvType(String),
-}
+use crate::error::ParseError;
 
 pub trait FromBytes
 where

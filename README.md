@@ -3,10 +3,12 @@ mmwave rewrite
 
 # December Plan
 1. Reimplement the radar reader with the following improvements:
-  -[] Connection loss handling
-  -[] More stability/bug fixes
-  -[] Better config writing
+  -[X] Connection loss handling
+    - This is a really complex problem. See the device locking section.
+  -[X] More stability/bug fixes
+  -[X] Better config writing
   -[x] Support for all possible TLVs
+  -[X] Swap from /dev/ttyACM* handles to usb serial number for reliability
   -[] Builtin pointcloud transformation
 2. Set up Dora Node which utilizes radar reader and publishes Data.
   -[] If possible, let commands be sent to the node to reconfigure the radar/transform.
@@ -14,7 +16,7 @@ mmwave rewrite
 4. Data recording/replaying.
   -[] Set up Dora Node to record data to a file.
   -[] Set up Dora Node to replay data from a file.
-5. Networking of Dora nodes (Stretch Goal!!!)
+5. Networking of Dora nodes (Stretch Goal, probably spill into january...)
 
 # January Plan
 1. Develop data collection Protocol/Plan, organize to get it done.
