@@ -82,7 +82,7 @@ impl<T: Default + Copy + FromBytes, const N: usize> FromBytes for [T; N] {
 impl<T: FromBytes> FromBytes for Vec<T> {
     fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
         let item_size = T::size_of();
-        if bytes.len() % item_size != 0 {
+        if bytes.len() % item_size != 0 || (bytes.len() / item_size) <= 0 {
             return Err(ParseError::DataLengthMismatch);
         }
         let mut items = Vec::new();
