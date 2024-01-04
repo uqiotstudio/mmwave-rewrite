@@ -1,0 +1,26 @@
+nodes:
+  - id: rust-node
+    custom:
+      build: cargo build -p dataflow_example_node
+      source: ../../target/debug/dataflow_example_node
+      inputs:
+        tick: dora/timer/millis/10
+      outputs:
+        - random
+  - id: runtime-node
+    operators:
+      - id: rust-operator
+        build: cargo build -p dataflow_example_operator
+        shared-library: ../../target/debug/dataflow_example_operator
+        inputs:
+          tick: dora/timer/millis/100
+          random: rust-node/random
+        outputs:
+          - status
+  - id: rust-sink
+    custom:
+      build: cargo build -p dataflow_example_sink
+      source: ../../target/debug/dataflow_example_sink
+      inputs:
+        message: runtime-node/rust-operator/status
+

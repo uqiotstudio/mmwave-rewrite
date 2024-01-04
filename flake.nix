@@ -22,7 +22,6 @@
             xorg.libXcursor 
             xorg.libXi 
             xorg.libXrandr
-
           ]; 
           RUST_SRC_PATH = rustPlatform.rustLibSrc;
           shellHook = ''export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${pkgs.lib.makeLibraryPath [
