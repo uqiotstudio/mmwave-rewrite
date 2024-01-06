@@ -1,10 +1,14 @@
-use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, watch};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpListener,
+    },
+    sync::{mpsc, watch},
+};
 
-async fn handle_client(mut stream: OwnedReadHalf, sender: Arc<mpsc::Sender<String>>) {
+// Forwards messages from the stream to the sender
+async fn handle_incoming(mut stream: OwnedReadHalf, sender: mpsc::Sender<String>) {
     let mut buffer = [0; 1024];
 
     loop {
@@ -19,40 +23,61 @@ async fn handle_client(mut stream: OwnedReadHalf, sender: Arc<mpsc::Sender<Strin
                 let _ = sender.send(message).await;
             }
             Err(e) => {
-                println!("Error with client: {}", e);
+                eprintln!("Error receiving from client: {}", e);
                 break;
             }
         }
     }
 }
 
-async fn handle_configuration(stream: OwnedWriteHalf, receiver: Arc<watch::Receiver<String>>) {
-    let mut buffer = [0; 1024];
+// Forwards messages from receiver to the streams writehalf
+async fn handle_outgoing(mut stream: OwnedWriteHalf, mut receiver: watch::Receiver<String>) {
+    loop {
+        match receiver.changed().await {
+            Ok(()) => {
+                let message = receiver.borrow_and_update().clone();
+                let buffer = &message.into_bytes()[..];
+                if let Err(e) = stream.write_all(buffer).await {
+                    eprintln!("Error sending to client: {}", e);
+                    break;
+                }
+                if let Err(e) = stream.flush().await {
+                    eprintln!("Error sending to client: {}", e);
+                    break;
+                }
+            }
+            Err(e) => {
+                eprintln!("Error sending to client: {}", e);
+                break;
+            }
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() {
     let listener = TcpListener::bind("127.0.0.1:7878").await.unwrap();
     let (mpsc_tx, mut mpsc_rx) = mpsc::channel(1);
-    let mpsc_sender = Arc::new(mpsc_tx);
+    let mpsc_sender = mpsc_tx;
 
-    let (watch_tx, mut watch_rx) = watch::channel("".into());
-    let watch_receiver = Arc::new(watch_rx);
+    let (watch_tx, watch_rx) = watch::channel("".into());
+    let watch_receiver = watch_rx;
 
+    dbg!("a");
     tokio::spawn(async move {
         loop {
             let (stream, _) = listener.accept().await.unwrap();
             let mpsc_sender = mpsc_sender.clone();
             let watch_receiver = watch_receiver.clone();
 
-            let (mut read_half, mut write_half) = stream.into_split();
+            let (read_half, write_half) = stream.into_split();
 
             tokio::spawn(async move {
-                handle_client(read_half, mpsc_sender).await;
+                handle_incoming(read_half, mpsc_sender).await;
             });
 
             tokio::spawn(async move {
-                handle_configuration(write_half, watch_receiver).await;
+                handle_outgoing(write_half, watch_receiver).await;
             });
         }
     });

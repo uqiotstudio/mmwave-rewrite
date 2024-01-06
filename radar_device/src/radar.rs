@@ -1,20 +1,19 @@
-use crate::{connection, error::*};
+use crate::error::RadarInitError;
+use crate::error::RadarReadError;
 use crate::{connection::Connection, message::Frame};
-use rusb::{Context, UsbContext};
-use serialport::SerialPort;
 use std::error::Error;
 use std::{fs::File, io::Read};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Model {
     AWR1843Boost,
     AWR1843AOP,
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Transform {}
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RadarDescriptor {
     pub serial: String, // Serial id for the USB device (can be found with lsusb, etc)
     pub model: Model,   // Model of the USB device

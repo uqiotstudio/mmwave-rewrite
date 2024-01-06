@@ -12,8 +12,7 @@ libudev = "0.3.0"
 regex = "1.10.2"
 rusb = "0.9.3"
 serde = {version="1.0.193", features=["derive"]}
-serde-binary = "0.5.0"
-serde_arrays = "0.1.0"
+serde_json = "1.0.111"
 serialport = "4.2.2"
 udev = "0.8.0"
 # derive_from_bytes = { path = "./derive_from_bytes" }
