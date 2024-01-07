@@ -11,6 +11,7 @@ use tokio_stream::StreamExt;
 pub struct Manager {
     config: RadarConfiguration,
     frame_receivers: Vec<mpsc::Receiver<Frame>>,
+    read_window: u64,
     kill_sender: watch::Sender<bool>,
     kill_receiver: watch::Receiver<bool>,
 }
@@ -23,6 +24,7 @@ impl Manager {
                 descriptors: Vec::new(),
             },
             frame_receivers: Vec::new(),
+            read_window: 100,
             kill_sender: tx,
             kill_receiver: rx,
         }
@@ -78,7 +80,7 @@ impl Manager {
             .frame_receivers
             .iter_mut()
             .map(|rx| {
-                let duration = Duration::from_millis(50);
+                let duration = Duration::from_millis(self.read_window);
                 async move { timeout(duration, rx.recv()).await.ok().flatten() }
             })
             .collect();

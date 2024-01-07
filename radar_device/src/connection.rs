@@ -69,7 +69,33 @@ impl Connection {
                             });
                         }
                     }
-                    Model::AWR1843AOP => todo!(),
+                    Model::AWR1843AOP => {
+                        // For AWR1843Boost, the first ttyACMX is cli, second is data
+                        let regex = Regex::new(r"^/dev/ttyUSB\d+$").unwrap();
+                        let Some(Some(devname)) =
+                            device.property_value("DEVNAME").map(|x| x.to_str())
+                        else {
+                            continue;
+                        };
+                        if !regex.is_match(devname) {
+                            // Irelevant
+                            continue;
+                        }
+                        // The cli_port comes first, so this should be fine (I THINK)
+                        // TODO possibly find a better way to do this, there are some distinguishing
+                        // features in the attributes/properties to utilize
+                        if cli_port.is_none() {
+                            cli_port = Some(PortDescriptor {
+                                path: devname.to_owned(),
+                                baud_rate: 115200,
+                            });
+                        } else if data_port.is_none() {
+                            data_port = Some(PortDescriptor {
+                                path: devname.to_owned(),
+                                baud_rate: 921600,
+                            });
+                        }
+                    }
                 }
             }
         }

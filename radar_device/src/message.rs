@@ -222,9 +222,20 @@ impl FrameBody {
                 TlvType::AzimuthElevationStaticHeatmap => {
                     TlvBody::AzimuthElevationStaticHeatmap(Vec::from_bytes(&bytes)?)
                 }
-                TlvType::Temperature => {
-                    return Err(ParseError::UnimplementedTlvType("Temperature".to_owned()))
-                }
+                TlvType::Temperature => TlvBody::Temperature {
+                    temp_report_valid: u32::from_bytes(&bytes[0..4])?,
+                    time: u32::from_bytes(&bytes[4..8])?,
+                    tmp_rx0_sens: u16::from_bytes(&bytes[8..10])?,
+                    tmp_rx1_sens: u16::from_bytes(&bytes[10..12])?,
+                    tmp_rx2_sens: u16::from_bytes(&bytes[12..14])?,
+                    tmp_rx3_sens: u16::from_bytes(&bytes[14..16])?,
+                    tmp_tx0_sens: u16::from_bytes(&bytes[16..18])?,
+                    tmp_tx1_sens: u16::from_bytes(&bytes[18..20])?,
+                    tmp_tx2_sens: u16::from_bytes(&bytes[20..22])?,
+                    tmp_pm_sens: u16::from_bytes(&bytes[22..24])?,
+                    tmp_dig0_sens: u16::from_bytes(&bytes[24..26])?,
+                    tmp_dig1_sens: u16::from_bytes(&bytes[26..28])?,
+                },
             };
 
             offset += tlv_header.length as usize;
@@ -254,7 +265,20 @@ pub enum TlvBody {
     Statistics([u32; 24 / std::mem::size_of::<u32>()]),
     SideInfo(Vec<[u16; 2]>),
     AzimuthElevationStaticHeatmap(Vec<[u8; 4]>),
-    Temperature,
+    Temperature {
+        temp_report_valid: u32,
+        time: u32,
+        tmp_rx0_sens: u16,
+        tmp_rx1_sens: u16,
+        tmp_rx2_sens: u16,
+        tmp_rx3_sens: u16,
+        tmp_tx0_sens: u16,
+        tmp_tx1_sens: u16,
+        tmp_tx2_sens: u16,
+        tmp_pm_sens: u16,
+        tmp_dig0_sens: u16,
+        tmp_dig1_sens: u16,
+    },
 }
 
 #[derive(Debug)]
