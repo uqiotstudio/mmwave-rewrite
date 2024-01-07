@@ -141,7 +141,7 @@ impl Connection {
             frame_body,
         };
 
-        dbg!(&frame.frame_header);
+        // dbg!(&frame.frame_header);
 
         Ok(frame)
     }
@@ -159,7 +159,7 @@ impl Connection {
             {
                 return Err(RadarWriteError::Disconnected);
             }
-            println!("{}", line);
+            // println!("{}", line);
             thread::sleep(time::Duration::from_millis(20));
         }
         Ok(self)

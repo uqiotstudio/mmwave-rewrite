@@ -51,8 +51,12 @@ pub struct Radar {
 }
 
 impl Radar {
+    pub fn get_descriptor(&self) -> RadarDescriptor {
+        self.descriptor.clone()
+    }
+
     fn reset_device(&mut self) -> Result<(), Box<dyn Error>> {
-        eprintln!("Resetting Serial Device");
+        // eprintln!("Resetting Serial Device");
 
         for device in rusb::devices()?.iter() {
             let device_desc = match device.device_descriptor() {
@@ -65,7 +69,7 @@ impl Radar {
                 Err(_) => continue,
             };
 
-            dbg!(&handle);
+            // dbg!(&handle);
 
             let serial_number = match handle.read_serial_number_string_ascii(&device_desc) {
                 Ok(sn) => sn,

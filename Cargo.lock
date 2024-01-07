@@ -2031,6 +2031,8 @@ dependencies = [
  "serde",
  "serde_json",
  "serialport",
+ "tokio",
+ "tokio-stream",
  "udev",
 ]
 

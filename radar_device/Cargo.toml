@@ -14,5 +14,7 @@ rusb = "0.9.3"
 serde = {version="1.0.193", features=["derive"]}
 serde_json = "1.0.111"
 serialport = "4.2.2"
+tokio = {version = "1.35.1", features = ["rt", "rt-multi-thread", "macros"]}
+tokio-stream = "0.1.14"
 udev = "0.8.0"
 # derive_from_bytes = { path = "./derive_from_bytes" }

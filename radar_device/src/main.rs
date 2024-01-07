@@ -1,14 +1,21 @@
 pub mod config;
 pub mod connection;
 pub mod error;
+pub mod manager;
 pub mod message;
 pub mod radar;
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
+
+use crate::{message::FrameHeader, radar::Transform};
+use config::RadarConfiguration;
+use manager::Manager;
 use radar::RadarDescriptor;
-use std::time::Instant;
 
-use crate::{error::RadarReadError, radar::Transform};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() {
     // Initialize the test radar descriptor
     let radar_descriptor = RadarDescriptor {
         serial: "R2091049".to_owned(),
@@ -17,32 +24,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         transform: Transform {},
     };
 
-    dbg!(&radar_descriptor);
+    let radar_config = RadarConfiguration {
+        descriptors: vec![radar_descriptor],
+    };
 
-    // Consumes radar_descriptor to produce a valid RadarInstance
-    let mut radar_instance = radar_descriptor.clone().try_initialize().unwrap();
+    let mut manager = Manager::new();
 
-    dbg!(&radar_instance);
+    manager.set_config(radar_config);
 
-    let mut i = 0;
     loop {
-        dbg!(i);
-        i += 1;
-        let now = Instant::now();
-        match radar_instance.read_frame() {
-            Ok(frame) => {
-                // Got a frame and continue reading
-                dbg!(now.elapsed().as_millis());
-            }
-            Err(RadarReadError::ParseError(e)) => {
-                dbg!(e);
-            }
-            Err(RadarReadError::Disconnected)
-            | Err(RadarReadError::NotConnected)
-            | Err(RadarReadError::Timeout) => {
-                eprintln!("Connection to radar lost, attempting reconnection");
-                radar_instance = radar_instance.reconnect();
-            }
-        };
+        // thread::sleep(Duration::from_secs(1));
+        let frames = manager.receive().await;
+        let headers: Vec<&FrameHeader> = frames.iter().map(|f| &f.frame_header).collect();
+        dbg!(headers);
     }
 }
