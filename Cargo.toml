@@ -7,7 +7,8 @@ members = [
   "dataflow_example/orchestrator",
   "dora/orchestrator",
   "dora/aggregator",
-  "dora/radar_client"
+  "dora/radar_client",
+  "server"
 ]
 
 [workspace.package]
@@ -17,6 +18,3 @@ version = "0.1.0"
 dora-node-api = "0.3.0"
 dora-operator-api = "0.3.0"
 dora-daemon = "0.3.0"
-dora-core = "0.3.0"
-dora-coordinator = "0.3.0"
-dora-cli = "0.3.0"

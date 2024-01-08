@@ -1,7 +1,7 @@
 use crate::radar::RadarDescriptor;
 use serde;
 
-#[derive(PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RadarConfiguration {
     pub descriptors: Vec<RadarDescriptor>,
 }

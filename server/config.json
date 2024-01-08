@@ -1,0 +1,16 @@
+{
+    "descriptors": [
+        {
+            "serial": "123456",
+            "model": "AWR1843Boost",
+            "config": "/path/to/config",
+            "transform": {}
+        },
+        {
+            "serial": "789012",
+            "model": "AWR1843AOP",
+            "config": "/path/to/another/config",
+            "transform": {}
+        }
+    ]
+}
