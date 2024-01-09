@@ -1,5 +1,5 @@
-use radar_device::config::RadarConfiguration;
-use radar_device::pointcloud::PointCloud;
+use radars::config::RadarConfiguration;
+use radars::pointcloud::PointCloud;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]

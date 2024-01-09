@@ -3,7 +3,6 @@ pub mod connection;
 pub mod error;
 pub mod manager;
 pub mod message;
-pub mod pointcloud;
 pub mod radar;
 use std::{
     thread,
@@ -13,23 +12,21 @@ use std::{
 use crate::{message::FrameHeader, radar::Transform};
 use config::RadarConfiguration;
 use manager::Manager;
-use radar::RadarDescriptor;
+use radar::AwrDescriptor;
 
 #[tokio::main]
 async fn main() {
     // Initialize the test radar descriptor
-    let radar_descriptor = RadarDescriptor {
+    let radar_descriptor = AwrDescriptor {
         serial: "R2091049".to_owned(),
         model: radar::Model::AWR1843Boost,
-        config: "./profile_AWR1843B.cfg".to_owned(),
-        transform: Transform {},
+        config: include_str!("../../profile_AWR1843B.cfg").to_owned(),
     };
 
-    let radar_descriptor2 = RadarDescriptor {
+    let radar_descriptor2 = AwrDescriptor {
         serial: "00E23FD7".to_owned(),
         model: radar::Model::AWR1843AOP,
-        config: "./profile_AWR1843_AOP.cfg".to_owned(),
-        transform: Transform {},
+        config: include_str!("../../profile_AWR1843_AOP.cfg").to_owned(),
     };
 
     let radar_config = RadarConfiguration {

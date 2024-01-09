@@ -1,14 +1,8 @@
 [workspace]
 members = [
-  "radar_device",
-  "dataflow_example/node",
-  "dataflow_example/operator",
-  "dataflow_example/sink",
-  "dataflow_example/orchestrator",
-  "dora/orchestrator",
-  "dora/aggregator",
-  "dora/radar_client",
-  "server"
+  "ti_device",
+  "server",
+  "radars"
 ]
 
 [workspace.package]

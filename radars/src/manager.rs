@@ -1,0 +1,121 @@
+use tokio::sync::mpsc;
+use tokio::sync::watch;
+use tokio::task;
+use tokio::time::{timeout, Duration};
+use tokio_stream::StreamExt;
+
+use crate::config::Configuration;
+use crate::pointcloud::PointCloudLike;
+use crate::pointcloud_provider::PointCloudProvider;
+
+pub struct Manager {
+    config: Configuration,
+    pointcloud_receivers: Vec<mpsc::Receiver<PointCloudLike>>,
+    read_window: u64,
+    kill_sender: watch::Sender<bool>,
+    kill_receiver: watch::Receiver<bool>,
+}
+
+impl Manager {
+    pub fn new() -> Self {
+        let (tx, rx) = watch::channel(false);
+        Manager {
+            config: Configuration {
+                descriptors: Vec::new(),
+            },
+            pointcloud_receivers: Vec::new(),
+            read_window: 100,
+            kill_sender: tx,
+            kill_receiver: rx,
+        }
+    }
+    pub fn set_config(&mut self, config: Configuration) {
+        self.config = config;
+        // Whenever we update the config we need to reload all existing radars
+        self.reload();
+    }
+
+    pub fn reload(&mut self) {
+        // Send the kill signal to all radar nodes and then restart them
+        // This could be improved in future to only modify nodes that have changed
+        println!("Reloading the radar manager");
+        self.kill_all().unwrap(); // TODO if this *somehow* fails, probably should auto restart it
+        self.start();
+        println!("Reload complete");
+    }
+
+    fn kill_all(&mut self) -> Result<(), watch::error::SendError<bool>> {
+        println!("Sending kill signal to all radar instances");
+        self.pointcloud_receivers.drain(..);
+        self.kill_sender.send(true)?;
+        let (tx, rx) = watch::channel(false);
+        self.kill_sender = tx;
+        self.kill_receiver = rx;
+        Ok(())
+    }
+
+    fn start(&mut self) {
+        println!("Starting up all radar instances");
+        for descriptor in self.config.descriptors.iter() {
+            match descriptor.clone().try_initialize() {
+                Ok(radar_instance) => {
+                    let (tx, rx) = mpsc::channel(1);
+                    println!("Radar instance {:?} spawned", descriptor);
+                    task::spawn(radar_loop(radar_instance, self.kill_receiver.clone(), tx));
+                    self.pointcloud_receivers.push(rx);
+                }
+                Err(e) => {
+                    println!(
+                        "Unable to spawn instance {:?} with error {:?}",
+                        descriptor, e
+                    );
+                }
+            }
+        }
+    }
+
+    pub async fn receive(&mut self) -> Vec<PointCloudLike> {
+        // Receives a frame from each receiver, with a 50ms window for all radars to send before they are abandoned.
+        let futures: Vec<_> = self
+            .pointcloud_receivers
+            .iter_mut()
+            .map(|rx| {
+                let duration = Duration::from_millis(self.read_window);
+                async move { timeout(duration, rx.recv()).await.ok().flatten() }
+            })
+            .collect();
+
+        tokio_stream::iter(futures)
+            .then(|future| future)
+            .filter_map(|future| future)
+            .collect::<Vec<_>>()
+            .await
+    }
+}
+
+async fn radar_loop(
+    mut provider: Box<dyn PointCloudProvider>,
+    kill_receiver: watch::Receiver<bool>,
+    sender: mpsc::Sender<PointCloudLike>,
+) {
+    while !*kill_receiver.borrow() {
+        match provider.try_read() {
+            Ok(frame) => {
+                // Got a frame and continue reading
+                match sender.send(frame).await {
+                    Ok(_) => {}
+                    Err(_) => {
+                        eprintln!("Error sending frame to manager, disconnecting");
+                        break;
+                    }
+                }
+            }
+            Err(e) => {
+                // In this event, the pointcloud provider has tried to recover and failed, so we need to kill this process
+                eprintln!("Provider failed with error {:?}", e);
+                break;
+            }
+        }
+    }
+    println!("A radar instance was killed")
+}

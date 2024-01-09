@@ -1,5 +1,5 @@
 [package]
-name = "radar_device"
+name = "ti_device"
 version = "0.1.0"
 edition = "2021"
 

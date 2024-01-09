@@ -1,8 +1,16 @@
+use std::error::Error;
+
 #[derive(Debug)]
 pub enum RadarInitError {
     PortUnavailable(String),
     PortNotFound(String),
     InaccessibleConfig(String),
+}
+
+impl Into<Box<dyn Error>> for RadarInitError {
+    fn into(self) -> Box<dyn Error> {
+        format!("{:?}", self).into()
+    }
 }
 
 #[derive(Debug)]

@@ -1,4 +1,4 @@
-use radar_device::pointcloud::PointCloud;
+use radars::pointcloud::PointCloud;
 use std::time::Instant;
 
 pub struct FrameBuffer {

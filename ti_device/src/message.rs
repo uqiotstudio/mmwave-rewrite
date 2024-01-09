@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::error::ParseError;
 
 pub trait FromBytes
@@ -103,13 +105,13 @@ impl<T: FromBytes> FromBytes for Vec<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Frame {
     pub frame_header: FrameHeader,
     pub frame_body: FrameBody,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FrameHeader {
     pub magic_word: [u16; 4],
     pub version: u32,
@@ -184,7 +186,7 @@ impl FromBytes for FrameHeader {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FrameBody {
     pub tlvs: Vec<Tlv>,
 }
@@ -249,13 +251,13 @@ impl FrameBody {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Tlv {
     pub tlv_header: TlvHeader,
     pub tlv_body: TlvBody,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum TlvBody {
     PointCloud(Vec<[f32; 4]>),
     RangeProfile(Vec<[u8; 2]>),
@@ -281,10 +283,10 @@ pub enum TlvBody {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TlvHeader {
-    tlv_type: TlvType,
-    length: u32,
+    pub tlv_type: TlvType,
+    pub length: u32,
 }
 
 impl FromBytes for TlvHeader {
@@ -306,7 +308,7 @@ impl FromBytes for TlvHeader {
 
 // The full list of TLVTypes can be found at https://dev.ti.com/tirex/explore/node?node=A__ADnbI7zK9bSRgZqeAxprvQ__radar_toolbox__1AslXXD__LATEST in case you need to implement more later on.
 // Note, the number assigned is IMPORTANT for the binary reading
-#[derive(Debug)]
+#[derive(Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum TlvType {
     PointCloud = 1,
     RangeProfile = 2,

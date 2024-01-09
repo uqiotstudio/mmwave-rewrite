@@ -1,7 +1,7 @@
 use crate::config::RadarConfiguration;
 use crate::error::RadarReadError;
 use crate::message::Frame;
-use crate::radar::Radar;
+use crate::radar::Awr;
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 use tokio::task;
@@ -94,7 +94,7 @@ impl Manager {
 }
 
 async fn radar_loop(
-    mut radar_instance: Radar,
+    mut radar_instance: Awr,
     kill_receiver: watch::Receiver<bool>,
     sender: mpsc::Sender<Frame>,
 ) {

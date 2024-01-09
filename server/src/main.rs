@@ -12,7 +12,7 @@ use axum::{
     Router,
 };
 use message::{ConfigMessage, PointCloudMessage, ServerMessage};
-use radar_device::config::RadarConfiguration;
+use radars::config::RadarConfiguration;
 use std::{fs::File, io::BufReader, net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::StreamExt;

@@ -1,9 +1,9 @@
-use crate::radar::RadarDescriptor;
+use crate::radar::AwrDescriptor;
 use serde;
 
 #[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RadarConfiguration {
-    pub descriptors: Vec<RadarDescriptor>,
+    pub descriptors: Vec<AwrDescriptor>,
 }
 
 #[cfg(test)]
@@ -14,7 +14,7 @@ mod tests {
 
     #[test]
     fn test_radar_configuration_serialize() {
-        let radar_descriptor = RadarDescriptor {
+        let radar_descriptor = AwrDescriptor {
             serial: "123456".to_string(),
             model: Model::AWR1843Boost,
             config: "/path/to/config".to_string(),
@@ -43,14 +43,14 @@ mod tests {
         }
         "#;
 
-        let expected_radar_descriptor = RadarDescriptor {
+        let expected_radar_descriptor = AwrDescriptor {
             serial: "ABC123".to_string(),
             model: Model::AWR1843Boost,
             config: "/path/to/another/config".to_string(),
             transform: Transform {},
         };
 
-        let deserialized: RadarDescriptor = serde_json::from_str(json_data).unwrap();
+        let deserialized: AwrDescriptor = serde_json::from_str(json_data).unwrap();
 
         assert_eq!(deserialized, expected_radar_descriptor);
     }
@@ -78,13 +78,13 @@ mod tests {
 
         let expected_radar_configuration = RadarConfiguration {
             descriptors: vec![
-                RadarDescriptor {
+                AwrDescriptor {
                     serial: "123456".to_string(),
                     model: Model::AWR1843Boost,
                     config: "/path/to/config".to_string(),
                     transform: Transform {},
                 },
-                RadarDescriptor {
+                AwrDescriptor {
                     serial: "789012".to_string(),
                     model: Model::AWR1843AOP,
                     config: "/path/to/another/config".to_string(),

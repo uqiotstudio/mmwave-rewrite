@@ -14,30 +14,23 @@ pub enum Model {
 pub struct Transform {}
 
 #[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct RadarDescriptor {
+pub struct AwrDescriptor {
     pub serial: String, // Serial id for the USB device (can be found with lsusb, etc)
     pub model: Model,   // Model of the USB device
-    pub config: String, // Configuration path to initialize device
-    pub transform: Transform, // The transform to apply to the radar
+    pub config: String, // Configuration string to initialize device
 }
 
-impl RadarDescriptor {
-    pub fn try_initialize(self) -> Result<Radar, RadarInitError> {
+impl AwrDescriptor {
+    pub fn try_initialize(self) -> Result<Awr, RadarInitError> {
         let connection = Connection::try_open(self.serial.to_owned(), self.model)?;
 
-        let mut config_file = File::open(&self.config)
-            .map_err(|_| RadarInitError::InaccessibleConfig(self.config.clone()))?;
-
-        let mut config = String::new();
-        config_file
-            .read_to_string(&mut config)
-            .map_err(|e| RadarInitError::InaccessibleConfig(e.to_string()))?;
+        let config = self.config.clone();
 
         let connection = connection
             .send_command(config)
             .map_err(|_| RadarInitError::PortUnavailable("CLI_Port".to_owned()))?;
 
-        Ok(Radar {
+        Ok(Awr {
             descriptor: self,
             connection,
         })
@@ -45,13 +38,13 @@ impl RadarDescriptor {
 }
 
 #[derive(Debug)]
-pub struct Radar {
-    descriptor: RadarDescriptor,
+pub struct Awr {
+    descriptor: AwrDescriptor,
     connection: Connection,
 }
 
-impl Radar {
-    pub fn get_descriptor(&self) -> RadarDescriptor {
+impl Awr {
+    pub fn get_descriptor(&self) -> AwrDescriptor {
         self.descriptor.clone()
     }
 
