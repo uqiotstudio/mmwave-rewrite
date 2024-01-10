@@ -1,3 +1,6 @@
+use serde::Deserialize;
+use serde::Deserializer;
+
 use crate::error::RadarInitError;
 use crate::error::RadarReadError;
 use crate::{connection::Connection, message::Frame};
@@ -17,7 +20,16 @@ pub struct Transform {}
 pub struct AwrDescriptor {
     pub serial: String, // Serial id for the USB device (can be found with lsusb, etc)
     pub model: Model,   // Model of the USB device
+    #[serde(deserialize_with = "config_deserializer")]
     pub config: String, // Configuration string to initialize device
+}
+
+fn config_deserializer<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let path: String = Deserialize::deserialize(deserializer)?;
+    std::fs::read_to_string(&path).map_err(serde::de::Error::custom)
 }
 
 impl AwrDescriptor {

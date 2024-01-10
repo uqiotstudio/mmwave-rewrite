@@ -15,13 +15,13 @@ pub enum DeviceDescriptor {
 
 #[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Clone)]
 pub struct PcPDescriptor {
-    pub device: DeviceDescriptor,
+    pub device_descriptor: DeviceDescriptor,
     pub transform: Transform,
 }
 
 impl PcPDescriptor {
     pub fn try_initialize(&mut self) -> Result<Box<dyn PointCloudProvider>, Box<dyn Error>> {
-        Ok(match &mut self.device {
+        Ok(match &mut self.device_descriptor {
             DeviceDescriptor::AWR(descriptor) => Box::new(
                 descriptor
                     .clone()

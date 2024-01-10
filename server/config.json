@@ -1,16 +1,28 @@
 {
     "descriptors": [
         {
-            "serial": "123456",
-            "model": "AWR1843Boost",
-            "config": "/path/to/config",
-            "transform": {}
+            "device_descriptor": {
+                "AWR": {
+                    "serial": "123456",
+                    "model": "AWR1843Boost",
+                    "config": "./profile_AWR1843B.cfg"
+                }
+            },
+            "transform": {
+                
+            }
         },
         {
-            "serial": "789012",
-            "model": "AWR1843AOP",
-            "config": "/path/to/another/config",
-            "transform": {}
+            "device_descriptor": {
+                "AWR": {
+                    "serial": "789012",
+                    "model": "AWR1843AOP",
+                    "config": "./profile_AWR1843_AOP.cfg"
+                }
+            },
+            "transform": {
+                
+            }
         }
     ]
 }

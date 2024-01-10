@@ -27,9 +27,11 @@ async fn main() {
     let (tx, rx) = mpsc::channel::<PointCloudMessage>(100);
 
     // Get the initial configuration
-    let file = File::open("./config.json").unwrap();
+    let file = File::open("./server/config.json").unwrap();
     let reader = BufReader::new(file);
     let config: Configuration = serde_json::from_reader(reader).unwrap();
+
+    dbg!(&config);
 
     // Spawn the main loop task
     tokio::spawn(async move { accumulator(rx) });
