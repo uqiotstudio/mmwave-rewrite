@@ -64,6 +64,7 @@ async fn websocket_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     // let tx = state.tx.clone();
+    println!("Incoming Websocket Connection: {:#?}", &ws);
     let state = state.clone();
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
@@ -84,6 +85,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
         .await
         .is_err()
     {
+        dbg!("Error with socket");
         return;
     }
 
