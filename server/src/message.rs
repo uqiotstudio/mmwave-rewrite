@@ -1,4 +1,4 @@
-use radars::config::RadarConfiguration;
+use radars::config::Configuration;
 use radars::pointcloud::PointCloud;
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +10,7 @@ pub enum ServerMessage {
 
 #[derive(Serialize, Deserialize)]
 pub struct ConfigMessage {
-    pub config: RadarConfiguration,
+    pub config: Configuration,
     pub changed: Vec<usize>, // Indices for the changed elements!
 }
 

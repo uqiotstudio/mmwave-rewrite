@@ -12,13 +12,13 @@ use axum::{
     Router,
 };
 use message::{ConfigMessage, PointCloudMessage, ServerMessage};
-use radars::config::RadarConfiguration;
+use radars::config::Configuration;
 use std::{fs::File, io::BufReader, net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::StreamExt;
 
 struct AppState {
-    config: RadarConfiguration,
+    config: Configuration,
     tx: Sender<PointCloudMessage>,
 }
 
@@ -29,7 +29,7 @@ async fn main() {
     // Get the initial configuration
     let file = File::open("./config.json").unwrap();
     let reader = BufReader::new(file);
-    let config: RadarConfiguration = serde_json::from_reader(reader).unwrap();
+    let config: Configuration = serde_json::from_reader(reader).unwrap();
 
     // Spawn the main loop task
     tokio::spawn(async move { accumulator(rx) });
@@ -49,8 +49,12 @@ async fn main() {
 }
 
 async fn accumulator(mut rx: Receiver<PointCloudMessage>) {
-    let frame_buffer = FrameBuffer::new(100);
-    while let Some(pointcloud) = rx.recv().await {}
+    let mut frame_buffer = FrameBuffer::new(100);
+    while let Some(point_cloud_message) = rx.recv().await {
+        let mut point_cloud = point_cloud_message.pointcloud;
+        frame_buffer.push_frame(&mut point_cloud);
+        dbg!(&frame_buffer);
+    }
 }
 
 async fn websocket_handler(

@@ -30,13 +30,8 @@ impl PointCloudProvider for Awr {
                 // A parse error isnt serious enough to warrant a restart, so just let us continue with no points for a frame
                 Ok(PointCloudLike::PointCloud(PointCloud::default()))
             }
-            Err(RadarReadError::Disconnected)
-            | Err(RadarReadError::NotConnected)
-            | Err(RadarReadError::Timeout) => {
-                eprintln!("Connection to radar lost, attempting reconnection");
-                // These errors warrant a restart, se we escalate the issue!
-                Err(Box::new("Connection Lost".to_string()))
-            }
+            // Any other errors should never happen and will require reinitialization
+            Err(e) => Err(Box::new(e)),
         }
     }
 }

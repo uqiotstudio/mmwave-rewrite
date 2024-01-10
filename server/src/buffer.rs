@@ -1,6 +1,7 @@
 use radars::pointcloud::PointCloud;
 use std::time::Instant;
 
+#[derive(Debug)]
 pub struct FrameBuffer {
     pub finished: PointCloud,
     pub filling: PointCloud,
@@ -27,7 +28,7 @@ impl FrameBuffer {
         }
     }
 
-    pub fn push_frame(&mut self, frame: PointCloud) {
+    pub fn push_frame(&mut self, frame: &mut PointCloud) {
         self.reorganize();
         self.filling.extend(frame);
     }
