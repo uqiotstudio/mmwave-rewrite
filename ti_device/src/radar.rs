@@ -16,20 +16,44 @@ pub enum Model {
 #[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Transform {}
 
-#[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone, serde::Serialize)]
 pub struct AwrDescriptor {
     pub serial: String, // Serial id for the USB device (can be found with lsusb, etc)
     pub model: Model,   // Model of the USB device
-    #[serde(deserialize_with = "config_deserializer")]
     pub config: String, // Configuration string to initialize device
 }
 
-fn config_deserializer<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let path: String = Deserialize::deserialize(deserializer)?;
-    std::fs::read_to_string(&path).map_err(serde::de::Error::custom)
+#[derive(Deserialize)]
+struct AwrDescriptorHelper {
+    serial: String,
+    model: Model,
+    config: Option<String>,
+    config_path: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for AwrDescriptor {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let helper = AwrDescriptorHelper::deserialize(deserializer)?;
+
+        let config = if let Some(c) = helper.config {
+            c
+        } else if let Some(path) = helper.config_path {
+            std::fs::read_to_string(&path).map_err(serde::de::Error::custom)?
+        } else {
+            return Err(serde::de::Error::custom(
+                "Missing 'config' or 'config_path'",
+            ));
+        };
+
+        Ok(AwrDescriptor {
+            serial: helper.serial,
+            model: helper.model,
+            config,
+        })
+    }
 }
 
 impl AwrDescriptor {

@@ -5,7 +5,7 @@
                 "AWR": {
                     "serial": "123456",
                     "model": "AWR1843Boost",
-                    "config": "./profile_AWR1843B.cfg"
+                    "config_path": "./profile_AWR1843B.cfg"
                 }
             },
             "transform": {
@@ -17,7 +17,7 @@
                 "AWR": {
                     "serial": "789012",
                     "model": "AWR1843AOP",
-                    "config": "./profile_AWR1843_AOP.cfg"
+                    "config_path": "./profile_AWR1843_AOP.cfg"
                 }
             },
             "transform": {

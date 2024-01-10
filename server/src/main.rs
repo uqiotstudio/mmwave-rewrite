@@ -71,7 +71,19 @@ async fn websocket_handler(
 
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     let config = state.config.clone();
+    let config2 = state.config.clone();
     let tx = state.tx.clone();
+
+    let json = serde_json::to_string(&ServerMessage::ConfigMessage(ConfigMessage {
+        changed: (0..config2.descriptors.len()).into_iter().collect(),
+        config: config2,
+    }))
+    .unwrap();
+
+    dbg!(&json);
+
+    let deserialized: ServerMessage = serde_json::from_str(&json).unwrap();
+    dbg!(deserialized);
 
     // Send the config
     if socket
