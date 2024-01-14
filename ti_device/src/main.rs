@@ -5,6 +5,7 @@ pub mod manager;
 pub mod message;
 pub mod radar;
 use std::{
+    sync::Arc,
     thread,
     time::{Duration, Instant},
 };
@@ -13,6 +14,7 @@ use crate::{message::FrameHeader, radar::Transform};
 use config::RadarConfiguration;
 use manager::Manager;
 use radar::AwrDescriptor;
+use tokio::sync::Mutex;
 
 #[tokio::main]
 async fn main() {
@@ -33,22 +35,35 @@ async fn main() {
         descriptors: vec![radar_descriptor, radar_descriptor2],
     };
 
-    let mut manager = Manager::new();
+    let mut manager_orig = Arc::new(Mutex::new(Manager::new()));
 
-    manager.set_config(radar_config);
+    let manager = manager_orig.clone();
+    tokio::task::spawn(async move {
+        manager.lock().await.set_config(radar_config);
+    })
+    .await;
 
-    thread::sleep(Duration::from_secs(1));
+    assert_send::<Manager>();
 
-    let mut i = 0;
+    let manager = manager_orig.clone();
+    // tokio::task::spawn(async move {
+    //     manager.lock().await.receive().await;
+    // })
+    // .await;
+
     loop {
-        i += 1;
-        // thread::sleep(Duration::from_secs(1));
-        let frames = manager.receive().await;
-        let headers: Vec<&FrameHeader> = frames.iter().map(|f| &f.frame_header).collect();
-        dbg!(headers);
-        if i > 100 {
-            i = 0;
-            manager.reload();
-        }
+        dbg!(manager.lock().await.receive().await);
     }
+    // let mut i = 0;
+    // loop {
+    //     i += 1;
+    //     // thread::sleep(Duration::from_secs(1));
+    //     let frames = manager.receive().await.len();
+    //     if i > 100 {
+    //         i = 0;
+    //         manager.reload();
+    //     }
+    // }
 }
+
+fn assert_send<T: Send>() {}

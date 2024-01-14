@@ -1,6 +1,7 @@
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 use tokio::task;
+use tokio::time;
 use tokio::time::{timeout, Duration};
 use tokio_stream::StreamExt;
 
@@ -10,7 +11,8 @@ use crate::pointcloud_provider::PointCloudProvider;
 
 pub struct Manager {
     config: Configuration,
-    pointcloud_receivers: Vec<mpsc::Receiver<PointCloudLike>>,
+    pointcloud_sender: mpsc::Sender<PointCloudLike>,
+    pointcloud_receiver: mpsc::Receiver<PointCloudLike>,
     read_window: u64,
     kill_sender: watch::Sender<bool>,
     kill_receiver: watch::Receiver<bool>,
@@ -19,11 +21,13 @@ pub struct Manager {
 impl Manager {
     pub fn new() -> Self {
         let (tx, rx) = watch::channel(false);
+        let (tx2, rx2) = mpsc::channel(100);
         Manager {
             config: Configuration {
                 descriptors: Vec::new(),
             },
-            pointcloud_receivers: Vec::new(),
+            pointcloud_sender: tx2,
+            pointcloud_receiver: rx2,
             read_window: 100,
             kill_sender: tx,
             kill_receiver: rx,
@@ -46,9 +50,11 @@ impl Manager {
 
     fn kill_all(&mut self) -> Result<(), watch::error::SendError<bool>> {
         println!("Sending kill signal to all radar instances");
-        self.pointcloud_receivers.drain(..);
         self.kill_sender.send(true)?;
         let (tx, rx) = watch::channel(false);
+        let (tx2, rx2) = mpsc::channel(100);
+        self.pointcloud_sender = tx2;
+        self.pointcloud_receiver = rx2;
         self.kill_sender = tx;
         self.kill_receiver = rx;
         Ok(())
@@ -59,10 +65,12 @@ impl Manager {
         for descriptor in self.config.descriptors.iter() {
             match descriptor.clone().try_initialize() {
                 Ok(radar_instance) => {
-                    let (tx, rx) = mpsc::channel(1);
-                    println!("Radar instance {:?} spawned", descriptor);
-                    task::spawn(radar_loop(radar_instance, self.kill_receiver.clone(), tx));
-                    self.pointcloud_receivers.push(rx);
+                    println!("Radar instance {:#?} spawned", descriptor);
+                    task::spawn(radar_loop(
+                        radar_instance,
+                        self.kill_receiver.clone(),
+                        self.pointcloud_sender.clone(),
+                    ));
                 }
                 Err(e) => {
                     println!(
@@ -75,21 +83,19 @@ impl Manager {
     }
 
     pub async fn receive(&mut self) -> Vec<PointCloudLike> {
-        // Receives a frame from each receiver, with a 50ms window for all radars to send before they are abandoned.
-        let futures: Vec<_> = self
-            .pointcloud_receivers
-            .iter_mut()
-            .map(|rx| {
-                let duration = Duration::from_millis(self.read_window);
-                async move { timeout(duration, rx.recv()).await.ok().flatten() }
-            })
-            .collect();
+        // // Receives a frame from each receiver, with a timeout window for all radars to send before they are abandoned.
+        let mut point_clouds = Vec::new();
+        let deadline = time::Instant::now() + Duration::from_millis(self.read_window);
 
-        tokio_stream::iter(futures)
-            .then(|future| future)
-            .filter_map(|future| future)
-            .collect::<Vec<_>>()
-            .await
+        while let Ok(msg) = self.pointcloud_receiver.try_recv() {
+            dbg!("A");
+            point_clouds.push(msg);
+            if time::Instant::now() > deadline {
+                break;
+            }
+        }
+
+        point_clouds
     }
 }
 

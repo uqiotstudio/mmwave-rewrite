@@ -3,7 +3,7 @@
         {
             "device_descriptor": {
                 "AWR": {
-                    "serial": "123456",
+                    "serial": "R2091049",
                     "model": "AWR1843Boost",
                     "config_path": "./profile_AWR1843B.cfg"
                 }
@@ -15,7 +15,7 @@
         {
             "device_descriptor": {
                 "AWR": {
-                    "serial": "789012",
+                    "serial": "00E23FD7",
                     "model": "AWR1843AOP",
                     "config_path": "./profile_AWR1843_AOP.cfg"
                 }

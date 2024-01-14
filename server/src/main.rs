@@ -80,15 +80,10 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     }))
     .unwrap();
 
-    dbg!(&json);
-
-    let deserialized: ServerMessage = serde_json::from_str(&json).unwrap();
-    dbg!(deserialized);
-
     // Send the config
     if socket
-        .send(Message::Binary(
-            bincode::serialize(&ServerMessage::ConfigMessage(ConfigMessage {
+        .send(Message::Text(
+            serde_json::to_string(&ServerMessage::ConfigMessage(ConfigMessage {
                 changed: (0..config.descriptors.len()).into_iter().collect(),
                 config,
             }))
