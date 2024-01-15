@@ -6,7 +6,11 @@ use tokio::time::{timeout, Duration};
 use tokio_stream::StreamExt;
 
 use crate::config::Configuration;
+use crate::pointcloud::merge_pointclouds;
+use crate::pointcloud::IntoPointCloud;
+use crate::pointcloud::PointCloud;
 use crate::pointcloud::PointCloudLike;
+use crate::pointcloud_provider::PcPDescriptor;
 use crate::pointcloud_provider::PointCloudProvider;
 
 pub struct Manager {
@@ -70,6 +74,7 @@ impl Manager {
                         radar_instance,
                         self.kill_receiver.clone(),
                         self.pointcloud_sender.clone(),
+                        descriptor.clone(),
                     ));
                 }
                 Err(e) => {
@@ -87,14 +92,16 @@ impl Manager {
         let mut point_clouds = Vec::new();
         let deadline = time::Instant::now() + Duration::from_millis(self.read_window);
 
-        while let Ok(msg) = self.pointcloud_receiver.try_recv() {
-            dbg!("A");
-            point_clouds.push(msg);
+        loop {
             if time::Instant::now() > deadline {
                 break;
             }
+            let msg = match self.pointcloud_receiver.try_recv() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            point_clouds.push(msg);
         }
-
         point_clouds
     }
 }
@@ -103,6 +110,7 @@ async fn radar_loop(
     mut provider: Box<dyn PointCloudProvider>,
     kill_receiver: watch::Receiver<bool>,
     sender: mpsc::Sender<PointCloudLike>,
+    descriptor: PcPDescriptor,
 ) {
     while !*kill_receiver.borrow() {
         match provider.try_read() {
@@ -118,8 +126,21 @@ async fn radar_loop(
             }
             Err(e) => {
                 // In this event, the pointcloud provider has tried to recover and failed, so we need to kill this process
-                eprintln!("Provider failed with error {:?}", e);
-                break;
+                eprintln!("Provider failed with error {:?}, reinitializing", e);
+                // TODO this requires the provider to be dropped to really work in SOME cases, which can cause infinite reinitialization. We need to promise the compilerl that provider can be dropped, and then reassign it.
+                provider = match descriptor.clone().try_initialize() {
+                    Ok(p) => {
+                        println!("Successfully reinitialized provider");
+                        p
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "Failed to reinitialize with error {:?}, trying again later",
+                            e
+                        );
+                        continue;
+                    }
+                }
             }
         }
     }

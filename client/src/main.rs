@@ -99,7 +99,7 @@ async fn main() {
     tokio::task::spawn(async move {
         loop {
             let mut lock = manager.lock().await;
-            // dbg!(lock.receive().await.len());
+            let result = lock.receive().await;
         }
     })
     .await
