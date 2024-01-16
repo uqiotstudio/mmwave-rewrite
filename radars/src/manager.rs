@@ -6,7 +6,6 @@ use tokio::time::{timeout, Duration};
 use tokio_stream::StreamExt;
 
 use crate::config::Configuration;
-use crate::pointcloud::merge_pointclouds;
 use crate::pointcloud::IntoPointCloud;
 use crate::pointcloud::PointCloud;
 use crate::pointcloud::PointCloudLike;

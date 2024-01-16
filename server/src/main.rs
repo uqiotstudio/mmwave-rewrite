@@ -1,7 +1,6 @@
 pub mod buffer;
 pub mod message;
 
-use crate::buffer::FrameBuffer;
 use axum::{
     extract::{
         ws::{Message, WebSocket},
@@ -16,6 +15,8 @@ use radars::config::Configuration;
 use std::{fs::File, io::BufReader, net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::StreamExt;
+
+use crate::buffer::TimeBlockMap;
 
 struct AppState {
     config: Configuration,
@@ -34,7 +35,7 @@ async fn main() {
     dbg!(&config);
 
     // Spawn the main loop task
-    tokio::spawn(async move { accumulator(rx) });
+    tokio::spawn(async move { accumulator(rx).await });
 
     let app_state = Arc::new(AppState { config, tx });
 
@@ -51,12 +52,14 @@ async fn main() {
 }
 
 async fn accumulator(mut rx: Receiver<PointCloudMessage>) {
-    let mut frame_buffer = FrameBuffer::new(100);
+    let mut time_block_map = TimeBlockMap::new(30000);
     while let Some(point_cloud_message) = rx.recv().await {
-        let mut point_cloud = point_cloud_message.pointcloud;
-        frame_buffer.push_frame(&mut point_cloud);
-        dbg!(&frame_buffer);
+        let point_clouds = point_cloud_message.pointclouds;
+        time_block_map.push_multiple(point_clouds);
+        dbg!(&time_block_map);
+        time_block_map.reorganize();
     }
+    eprintln!("Accumulator Stopped");
 }
 
 async fn websocket_handler(
@@ -71,14 +74,7 @@ async fn websocket_handler(
 
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     let config = state.config.clone();
-    let config2 = state.config.clone();
     let tx = state.tx.clone();
-
-    let json = serde_json::to_string(&ServerMessage::ConfigMessage(ConfigMessage {
-        changed: (0..config2.descriptors.len()).into_iter().collect(),
-        config: config2,
-    }))
-    .unwrap();
 
     // Send the config
     if socket
@@ -96,18 +92,23 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
         return;
     }
 
-    while let Some(Ok(Message::Binary(message))) = socket.next().await {
-        let Ok(message) = bincode::deserialize::<ServerMessage>(&message) else {
+    while let Some(Ok(Message::Text(message))) = socket.next().await {
+        let Ok(message) = serde_json::from_str::<ServerMessage>(&message) else {
             continue;
         };
         match message {
             ServerMessage::ConfigMessage(_) => break,
             ServerMessage::PointCloudMessage(pointcloud_message) => {
                 // Forward the message onto the pointcloud handler
-                if tx.send(pointcloud_message).await.is_err() {
+                let result = tx.send(pointcloud_message).await;
+                if result.is_err() {
+                    eprintln!("Error sending pointcloud to accumulator: {:#?}", result);
+                    dbg!(result.err().unwrap().to_string());
                     break;
                 }
             }
         };
     }
+
+    eprintln!("Socket Handler Stopped");
 }

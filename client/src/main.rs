@@ -104,15 +104,15 @@ async fn main() {
         loop {
             let mut lock = manager.lock().await;
             let result = lock.receive().await;
-            dbg!(&result);
             for item in result {
                 let msg = ServerMessage::PointCloudMessage(PointCloudMessage {
-                    time: 0,
-                    pointcloud: item.into_point_cloud(),
+                    pointclouds: vec![item.into_point_cloud()],
                 });
-                write.send(Message::Text(
-                    serde_json::to_string(&msg).unwrap_or("".to_string()),
-                ));
+                let _ = write
+                    .send(Message::Text(
+                        serde_json::to_string(&msg).unwrap_or("".to_string()),
+                    ))
+                    .await;
             }
         }
     })

@@ -16,6 +16,5 @@ pub struct ConfigMessage {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PointCloudMessage {
-    pub time: u64,
-    pub pointcloud: PointCloud,
+    pub pointclouds: Vec<PointCloud>,
 }

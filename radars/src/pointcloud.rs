@@ -11,27 +11,6 @@ pub enum PointCloudLike {
     ZedCameraFrame,
 }
 
-// Merges the clouds into a single, extended pointcloud for each 100ms bucket
-pub fn merge_pointclouds(point_clouds: &mut Vec<PointCloud>) -> Vec<PointCloud> {
-    const BUCKET_SIZE: u128 = 100; // 100ms in milliseconds
-    let mut buckets = std::collections::HashMap::new();
-
-    for mut point_cloud in point_clouds.iter_mut() {
-        let bucket_key = point_cloud.time / BUCKET_SIZE;
-        buckets
-            .entry(bucket_key)
-            .and_modify(|bucket: &mut PointCloud| bucket.extend(&mut point_cloud))
-            .or_insert_with(|| {
-                let mut new_cloud = PointCloud::default();
-                new_cloud.time = bucket_key * BUCKET_SIZE;
-                new_cloud.extend(&mut point_cloud);
-                new_cloud
-            });
-    }
-
-    buckets.into_iter().map(|(_, cloud)| cloud).collect()
-}
-
 impl IntoPointCloud for PointCloudLike {
     fn into_point_cloud(self) -> PointCloud {
         match self {
@@ -55,7 +34,7 @@ pub struct PointMetaData {
 }
 
 impl PointCloud {
-    pub fn extend(&mut self, other: &mut PointCloud) {
+    pub fn extend(&mut self, mut other: PointCloud) {
         // Extends this pointcloud with other, consuming it
         self.points.append(&mut other.points);
         self.metadata.append(&mut other.metadata);

@@ -1,4 +1,7 @@
-use std::error::Error;
+use std::{
+    error::Error,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use ti_device::{error::RadarReadError, message::Frame, message::TlvBody, radar::Awr};
 
 use crate::{
@@ -12,6 +15,10 @@ impl IntoPointCloud for Frame {
         for tlv in self.frame_body.tlvs {
             if let TlvBody::PointCloud(pc) = tlv.tlv_body {
                 return PointCloud {
+                    time: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map(|t| t.as_millis())
+                        .unwrap_or(0),
                     points: pc,
                     ..Default::default()
                 };
