@@ -1,9 +1,13 @@
-use std::{sync::Arc, thread, time::Duration};
+use std::{
+    sync::Arc,
+    thread,
+    time::{Duration, UNIX_EPOCH},
+};
 
 use futures_util::stream::StreamExt;
 use futures_util::SinkExt;
-use radars::{config::Configuration, manager::Manager};
-use server::message::{ConfigMessage, ServerMessage};
+use radars::{config::Configuration, manager::Manager, pointcloud::IntoPointCloud};
+use server::message::{ConfigMessage, PointCloudMessage, ServerMessage};
 use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use url::Url;
@@ -100,6 +104,16 @@ async fn main() {
         loop {
             let mut lock = manager.lock().await;
             let result = lock.receive().await;
+            dbg!(&result);
+            for item in result {
+                let msg = ServerMessage::PointCloudMessage(PointCloudMessage {
+                    time: 0,
+                    pointcloud: item.into_point_cloud(),
+                });
+                write.send(Message::Text(
+                    serde_json::to_string(&msg).unwrap_or("".to_string()),
+                ));
+            }
         }
     })
     .await
