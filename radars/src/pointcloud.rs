@@ -30,7 +30,7 @@ pub struct PointCloud {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PointMetaData {
-    label: Option<String>,
+    pub label: Option<String>,
 }
 
 impl PointCloud {

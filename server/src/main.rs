@@ -11,12 +11,18 @@ use axum::{
     Router,
 };
 use message::{ConfigMessage, PointCloudMessage, ServerMessage};
-use radars::config::Configuration;
-use std::{fs::File, io::BufReader, net::SocketAddr, sync::Arc};
+use radars::{config::Configuration, pointcloud::PointCloud};
+use std::{
+    fs::File,
+    io::{BufReader, Read, Write},
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::StreamExt;
 
-use crate::buffer::TimeBlockMap;
+use crate::buffer::Accumulator;
 
 struct AppState {
     config: Configuration,
@@ -25,6 +31,8 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
+    File::create("out.json").unwrap();
+
     let (tx, rx) = mpsc::channel::<PointCloudMessage>(100);
 
     // Get the initial configuration
@@ -35,7 +43,7 @@ async fn main() {
     dbg!(&config);
 
     // Spawn the main loop task
-    tokio::spawn(async move { accumulator(rx).await });
+    tokio::spawn(async move { accumulator(rx, "out.json".to_string()).await });
 
     let app_state = Arc::new(AppState { config, tx });
 
@@ -51,15 +59,43 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn accumulator(mut rx: Receiver<PointCloudMessage>) {
-    let mut time_block_map = TimeBlockMap::new(30000);
-    while let Some(point_cloud_message) = rx.recv().await {
-        let point_clouds = point_cloud_message.pointclouds;
-        time_block_map.push_multiple(point_clouds);
-        dbg!(&time_block_map);
-        time_block_map.reorganize();
+async fn accumulator(mut rx: Receiver<PointCloudMessage>, file_path: String) {
+    let mut accumulator = Accumulator::new(1000);
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+
+    loop {
+        tokio::select! {
+            recieved = rx.recv() => {
+                if let Some(point_cloud_message) = recieved {
+                    let point_clouds = point_cloud_message.pointclouds;
+                    accumulator.push_multiple(point_clouds);
+                    accumulator.reorganize();
+                } else {
+                    eprintln!("Accumulator Stopped");
+                    return;
+                }
+            },
+            _ = interval.tick() => {
+                let popped_data = accumulator.pop_finished();
+                if !popped_data.is_empty() {
+                    let mut file = std::fs::OpenOptions::new().read(true).open(&file_path).unwrap_or_else(|_| File::create(&file_path).unwrap());
+                    let mut contents = String::new();
+                    file.read_to_string(&mut contents).expect("Unable to read file");
+                    let mut existing_data: Vec<PointCloud> = serde_json::from_str(&contents).unwrap_or_else(|_| Vec::new());
+
+                    // Append new data
+                    existing_data.extend(popped_data);
+
+                    // Reserialize and write back
+                    let serialized_data = serde_json::to_string(&existing_data).expect("Unable to serialize data");
+                    let mut file = File::create(&file_path).expect("Unable to create file");
+                    file.write_all(serialized_data.as_bytes()).expect("Unable to write data");
+
+                    println!("Updated out.json");
+                }
+            }
+        }
     }
-    eprintln!("Accumulator Stopped");
 }
 
 async fn websocket_handler(

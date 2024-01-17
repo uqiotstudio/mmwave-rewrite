@@ -5,13 +5,14 @@ use std::{
 use ti_device::{error::RadarReadError, message::Frame, message::TlvBody, radar::Awr};
 
 use crate::{
-    pointcloud::{IntoPointCloud, PointCloud, PointCloudLike},
+    pointcloud::{IntoPointCloud, PointCloud, PointCloudLike, PointMetaData},
     pointcloud_provider::PointCloudProvider,
 };
 
 // Simply converts any AWR frame into a pointcloud, dropping all the extra info :(
 impl IntoPointCloud for Frame {
     fn into_point_cloud(self) -> crate::pointcloud::PointCloud {
+        // dbg!(self.frame_header.time);
         for tlv in self.frame_body.tlvs {
             if let TlvBody::PointCloud(pc) = tlv.tlv_body {
                 return PointCloud {
@@ -19,6 +20,13 @@ impl IntoPointCloud for Frame {
                         .duration_since(UNIX_EPOCH)
                         .map(|t| t.as_millis())
                         .unwrap_or(0),
+                    // time: self.frame_header.time as u128,
+                    metadata: vec![
+                        PointMetaData {
+                            label: Some("mmwave".to_owned())
+                        };
+                        pc.len()
+                    ],
                     points: pc,
                     ..Default::default()
                 };

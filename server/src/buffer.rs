@@ -5,13 +5,13 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-pub struct TimeBlockMap {
+pub struct Accumulator {
     blocks: HashMap<u128, Vec<PointCloud>>,
     finished: Vec<PointCloud>,
     threshold: u128, // Threshold in ms before a block is complete
 }
 
-impl fmt::Debug for TimeBlockMap {
+impl fmt::Debug for Accumulator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug_struct = f.debug_struct("TimeBlockMap");
 
@@ -36,9 +36,9 @@ impl fmt::Debug for TimeBlockMap {
     }
 }
 
-impl TimeBlockMap {
+impl Accumulator {
     pub fn new(threshold: u128) -> Self {
-        TimeBlockMap {
+        Accumulator {
             blocks: HashMap::new(),
             finished: Vec::new(),
             threshold,
@@ -63,15 +63,16 @@ impl TimeBlockMap {
     }
 
     fn is_item_within_threshold(&self, item: &PointCloud) -> bool {
-        self.is_block_old(self.get_block_for_item(&item))
+        !self.is_block_old(self.get_block_for_item(&item))
     }
 
     fn is_block_old(&self, block: u128) -> bool {
-        SystemTime::now()
+        let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|t| t.as_millis())
-            .map(|t| t - block <= self.threshold && block < t)
-            .unwrap_or(false)
+            .unwrap_or(0);
+
+        (current_time > block) && (current_time - block > self.threshold)
     }
 
     pub fn reorganize(&mut self) {
@@ -81,8 +82,6 @@ impl TimeBlockMap {
             .cloned()
             .filter(|&k| self.is_block_old(k))
             .collect::<Vec<_>>();
-
-        dbg!(&old_blocks);
 
         for block in old_blocks {
             if let Some(items) = self.blocks.remove(&block) {
@@ -96,5 +95,11 @@ impl TimeBlockMap {
                 }
             }
         }
+    }
+
+    pub fn pop_finished(&mut self) -> Vec<PointCloud> {
+        let mut replacement = Vec::new();
+        std::mem::swap(&mut replacement, &mut self.finished);
+        replacement
     }
 }
