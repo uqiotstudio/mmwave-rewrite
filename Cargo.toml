@@ -3,7 +3,8 @@ members = [
   "ti_device",
   "server",
   "radars",
-  "client"
+  "client",
+  "zed_device"
 ]
 
 [workspace.package]
