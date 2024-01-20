@@ -4,7 +4,8 @@ members = [
   "server",
   "radars",
   "client",
-  "zed_device"
+  "zed_device",
+  "visualiser"
 ]
 
 [workspace.package]

@@ -17,6 +17,7 @@
           nativeBuildInputs = with pkgs; [ pkg-config udev alsa-lib pkg-config ];
           buildInputs = with pkgs; [ 
             cargo rustc rustfmt rust-analyzer rustPackages.clippy rustup
+            openssl
             # X support:
             xorg.libX11 
             xorg.libXcursor 

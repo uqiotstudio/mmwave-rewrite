@@ -102,4 +102,8 @@ impl Accumulator {
         std::mem::swap(&mut replacement, &mut self.finished);
         replacement
     }
+
+    pub fn peek(&self) -> Option<PointCloud> {
+        self.finished.last().cloned()
+    }
 }
