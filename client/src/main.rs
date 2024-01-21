@@ -1,3 +1,4 @@
+use reqwest;
 use std::{
     env,
     sync::Arc,
@@ -55,6 +56,18 @@ async fn main() {
 
     // Configure the manager
     let manager = manager_original.clone();
+    loop {
+        let url = format!("http://{}:3000/get_config", ip_address);
+        dbg!(&url);
+        if let Ok(resp) = reqwest::get(url).await {
+            if let Ok(text) = resp.text().await {
+                if let Ok(cfg) = serde_json::from_str::<Configuration>(&text) {
+                    manager.lock().await.set_config(cfg);
+                    break;
+                }
+            }
+        }
+    }
     tokio::task::spawn(async move {
         while let Some(thing) = manager_rx.recv().await {
             match thing {

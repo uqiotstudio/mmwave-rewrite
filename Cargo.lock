@@ -207,6 +207,7 @@ dependencies = [
  "bincode",
  "futures-util",
  "radars",
+ "reqwest",
  "serde",
  "serde_json",
  "server",

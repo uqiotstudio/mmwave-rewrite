@@ -29,7 +29,7 @@ use tokio_stream::StreamExt;
 use crate::buffer::Accumulator;
 
 struct AppState {
-    config: Configuration,
+    config: Arc<Mutex<Configuration>>,
     tx: Sender<PointCloudMessage>,
     accumulator: Arc<Mutex<Accumulator>>,
 }
@@ -44,8 +44,8 @@ async fn main() {
     let file = File::open("./server/config.json").unwrap();
     let reader = BufReader::new(file);
     let config: Configuration = serde_json::from_reader(reader).unwrap();
-
     dbg!(&config);
+    let config = Arc::new(Mutex::new(config));
 
     let accumulator = Arc::new(Mutex::new(Accumulator::new(1000)));
     let accumulator_clone = accumulator.clone();
@@ -54,6 +54,24 @@ async fn main() {
         config,
         tx,
         accumulator,
+    });
+
+    // Spawn a task to update the config file every 10 seconds
+    let app_state_cloned = app_state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+
+            let file = File::open("./server/config.json").unwrap();
+            let reader = BufReader::new(file);
+            let Ok(new_config): Result<Configuration, _> = serde_json::from_reader(reader) else {
+                continue;
+            };
+
+            *app_state_cloned.config.lock().await = new_config;
+            dbg!(app_state_cloned.config.lock().await);
+        }
     });
 
     // Spawn the main loop task
@@ -130,24 +148,23 @@ async fn websocket_handler(
 }
 
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
-    let config = state.config.clone();
     let tx = state.tx.clone();
 
     // Send the config
-    if socket
-        .send(Message::Text(
-            serde_json::to_string(&ServerMessage::ConfigMessage(ConfigMessage {
-                changed: (0..config.descriptors.len()).into_iter().collect(),
-                config,
-            }))
-            .unwrap(),
-        ))
-        .await
-        .is_err()
-    {
-        dbg!("Error with socket");
-        return;
-    }
+    // if socket
+    //     .send(Message::Text(
+    //         serde_json::to_string(&ServerMessage::ConfigMessage(ConfigMessage {
+    //             changed: (0..config.descriptors.len()).into_iter().collect(),
+    //             config: config.clone(),
+    //         }))
+    //         .unwrap(),
+    //     ))
+    //     .await
+    //     .is_err()
+    // {
+    //     dbg!("Error with socket");
+    //     return;
+    // }
 
     while let Some(Ok(Message::Text(message))) = socket.next().await {
         let Ok(message) = serde_json::from_str::<ServerMessage>(&message) else {
@@ -187,7 +204,7 @@ async fn get_pointcloud_handler(State(state): State<Arc<AppState>>) -> impl Into
 }
 
 async fn get_config_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    match serde_json::to_string(&state.config) {
+    match serde_json::to_string(&state.config.lock().await.clone()) {
         Ok(json) => (StatusCode::OK, json),
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
