@@ -10,7 +10,7 @@
             },
             "transform": {
                 "translation" : [0, -3, 0],
-                "orientation": [0, 0]
+                "orientation": [3.14159, 0]
             }
         },
         {
@@ -23,7 +23,7 @@
             },
             "transform": {
                 "translation" : [0, 3, 0],
-                "orientation": [3.14159, 0]
+                "orientation": [0, 0]
                 
             }
         }
