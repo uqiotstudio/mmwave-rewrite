@@ -1,4 +1,5 @@
 use std::{
+    env,
     sync::Arc,
     thread,
     time::{Duration, UNIX_EPOCH},
@@ -14,8 +15,12 @@ use url::Url;
 
 #[tokio::main]
 async fn main() {
+    let args: Vec<String> = env::args().collect();
+
+    let ip_address = args.get(1).cloned().unwrap_or("localhost".to_owned());
+
     let url = loop {
-        match Url::parse("ws://localhost:3000/ws") {
+        match Url::parse(&format!("ws://{}:3000/ws", ip_address)) {
             Ok(url) => {
                 println!("Found server, {:?}", url);
                 break url;
