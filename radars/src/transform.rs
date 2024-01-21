@@ -25,19 +25,25 @@ impl Transform {
             [0.0, pitch.sin(), pitch.cos()]
         ];
 
+        // Apply translation
+        let translated_point = array![point[0], point[1], point[2]]
+            + array![
+                self.translation[0],
+                self.translation[1],
+                self.translation[2]
+            ];
+
         // Combine rotations (first yaw, then pitch)
         let combined_rotation = pitch_matrix.dot(&yaw_matrix);
 
         // Apply rotation
-        let rotated_point = combined_rotation.dot(&array![point[0], point[1], point[2]]);
+        let rotated_point = combined_rotation.dot(&array![
+            translated_point[0],
+            translated_point[1],
+            translated_point[2]
+        ]);
 
-        // Apply translation
-        let translation_array = array![
-            self.translation[0],
-            self.translation[1],
-            self.translation[2]
-        ];
-        (rotated_point + translation_array)
+        rotated_point
             .to_owned()
             .into_raw_vec()
             .try_into()
@@ -61,18 +67,18 @@ impl Transform {
             [0.0, -pitch.sin(), pitch.cos()]
         ];
 
-        let translated_point = array![point[0], point[1], point[2]]
+        let rotated_point = inverse_yaw_matrix
+            .dot(&inverse_pitch_matrix)
+            .dot(&array![point[0], point[1], point[2]]);
+
+        let translated_point = array![rotated_point[0], rotated_point[1], rotated_point[2]]
             - array![
                 self.translation[0],
                 self.translation[1],
                 self.translation[2]
             ];
 
-        let rotated_point = inverse_yaw_matrix
-            .dot(&inverse_pitch_matrix)
-            .dot(&translated_point);
-
-        rotated_point
+        translated_point
             .to_owned()
             .into_raw_vec()
             .try_into()
