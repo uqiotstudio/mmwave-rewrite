@@ -9,7 +9,7 @@
                 }
             },
             "transform": {
-                "translation" : [0, 1.75, 0],
+                "translation" : [0, -1.75, 0],
                 "orientation": [3.14159, 0]
             }
         },
@@ -24,7 +24,6 @@
             "transform": {
                 "translation" : [0, 1.75, 0],
                 "orientation": [0, 0]
-                
             }
         }
     ]

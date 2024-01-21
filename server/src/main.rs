@@ -66,11 +66,14 @@ async fn main() {
             let file = File::open("./server/config.json").unwrap();
             let reader = BufReader::new(file);
             let Ok(new_config): Result<Configuration, _> = serde_json::from_reader(reader) else {
+                println!("Current Config Invalid! Unable to load.");
                 continue;
             };
 
-            *app_state_cloned.config.lock().await = new_config;
-            dbg!(app_state_cloned.config.lock().await);
+            if app_state_cloned.config.lock().await.clone() != new_config {
+                println!("Config Reloaded!");
+                *app_state_cloned.config.lock().await = new_config;
+            }
         }
     });
 

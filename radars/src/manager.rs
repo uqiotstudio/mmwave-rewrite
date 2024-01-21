@@ -37,9 +37,12 @@ impl Manager {
         }
     }
     pub fn set_config(&mut self, config: Configuration) {
-        self.config = config;
-        // Whenever we update the config we need to reload all existing radars
-        self.reload();
+        if config != self.config {
+            println!("Loading new config into manager");
+            self.config = config;
+            // Whenever we update the config we need to reload all existing radars
+            self.reload();
+        }
     }
 
     pub fn reload(&mut self) {

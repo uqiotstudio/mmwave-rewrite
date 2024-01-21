@@ -56,30 +56,28 @@ async fn main() {
 
     // Configure the manager
     let manager = manager_original.clone();
-    loop {
-        let url = format!("http://{}:3000/get_config", ip_address);
-        dbg!(&url);
-        if let Ok(resp) = reqwest::get(url).await {
-            if let Ok(text) = resp.text().await {
-                if let Ok(cfg) = serde_json::from_str::<Configuration>(&text) {
-                    manager.lock().await.set_config(cfg);
-                    break;
-                }
-            }
-        }
-    }
     tokio::task::spawn(async move {
-        while let Some(thing) = manager_rx.recv().await {
-            match thing {
-                ServerMessage::ConfigMessage(cfg) => {
-                    let mut lock = manager.lock().await;
-                    println!("Reconfiguring Manager");
-                    lock.set_config(cfg.config);
-                    thread::sleep(Duration::from_secs(1));
+        loop {
+            let url = format!("http://{}:3000/get_config", ip_address);
+            if let Ok(resp) = reqwest::get(url).await {
+                if let Ok(text) = resp.text().await {
+                    if let Ok(cfg) = serde_json::from_str::<Configuration>(&text) {
+                        manager.lock().await.set_config(cfg);
+                    }
                 }
-                ServerMessage::PointCloudMessage(_) => todo!(),
             }
         }
+        // while let Some(thing) = manager_rx.recv().await {
+        //     match thing {
+        //         ServerMessage::ConfigMessage(cfg) => {
+        //             let mut lock = manager.lock().await;
+        //             println!("Reconfiguring Manager");
+        //             lock.set_config(cfg.config);
+        //             thread::sleep(Duration::from_secs(1));
+        //         }
+        //         ServerMessage::PointCloudMessage(_) => todo!(),
+        //     }
+        // }
     });
 
     // Receive messages from the server and respond accordingly
