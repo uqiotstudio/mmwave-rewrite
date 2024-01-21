@@ -64,6 +64,7 @@ async fn main() {
     let app = Router::new()
         .route("/ws", get(websocket_handler))
         .route("/get_pointcloud", get(get_pointcloud_handler))
+        .route("/get_config", get(get_config_handler))
         .with_state(app_state);
 
     // let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -181,6 +182,16 @@ async fn get_pointcloud_handler(State(state): State<Arc<AppState>>) -> impl Into
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Failed to serialize pointcloud".into(),
+        ),
+    }
+}
+
+async fn get_config_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    match serde_json::to_string(&state.config) {
+        Ok(json) => (StatusCode::OK, json),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to serialize config".into(),
         ),
     }
 }

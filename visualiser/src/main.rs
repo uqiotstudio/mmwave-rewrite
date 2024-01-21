@@ -10,12 +10,14 @@ use tui::layout::Rect;
 use tui::style::{Color, Style};
 use tui::symbols;
 use tui::terminal::Frame;
+use tui::widgets::canvas::Shape;
 use tui::widgets::{canvas::Canvas, Block, Borders, Widget};
 use tui::Terminal;
 
 struct Point {
     x: f64,
     y: f64,
+    c: Color,
 }
 
 struct RealTimePlot {
@@ -27,8 +29,8 @@ impl RealTimePlot {
         RealTimePlot { points: Vec::new() }
     }
 
-    fn add_point(&mut self, x: f64, y: f64) {
-        self.points.push(Point { x, y });
+    fn add_point(&mut self, x: f64, y: f64, c: Color) {
+        self.points.push(Point { x, y, c });
     }
 
     fn clear(&mut self) {
@@ -42,7 +44,12 @@ impl RealTimePlot {
             .y_bounds([-10.0, 10.0])
             .paint(|ctx| {
                 for p in &self.points {
-                    ctx.print(p.x, p.y, "x");
+                    ctx.draw(&tui::widgets::canvas::Points {
+                        coords: &[(p.x, p.y)],
+                        color: p.c,
+                    });
+                    // ctx.print(p.x, p.y, symbols::DOT, Style::default().fg(p.color));
+                    // ctx.print(p.x, p.y, "x");
                 }
             });
 
@@ -63,8 +70,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut plot = RealTimePlot::new();
 
     // Add points to the plot
-    plot.add_point(5.0, 5.0);
-    plot.add_point(0.0, 0.0);
+    plot.add_point(5.0, 5.0, Color::Red);
+    plot.add_point(0.0, 0.0, Color::Blue);
 
     let refresh_rate = std::time::Duration::from_millis(1000 / 60);
 
@@ -77,8 +84,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(text) => {
                     if let Ok(pc) = serde_json::from_str::<PointCloud>(&text) {
                         plot.clear();
-                        for point in pc.points {
-                            plot.add_point(point[0] as f64, point[1] as f64)
+                        for (point, meta) in pc.points.iter().zip(pc.metadata) {
+                            plot.add_point(
+                                point[0] as f64,
+                                point[1] as f64,
+                                match meta.device.unwrap_or("".to_string()) {
+                                    s if s.starts_with("50528259") => Color::Red,
+                                    _ => Color::White,
+                                },
+                            )
                         }
                     }
                 }

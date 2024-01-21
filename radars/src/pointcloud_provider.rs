@@ -13,7 +13,7 @@ pub enum DeviceDescriptor {
     AWR(AwrDescriptor),
 }
 
-#[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Clone)]
+#[derive(PartialEq, Serialize, Deserialize, Debug, Clone)]
 pub struct PcPDescriptor {
     pub device_descriptor: DeviceDescriptor,
     pub transform: Transform,

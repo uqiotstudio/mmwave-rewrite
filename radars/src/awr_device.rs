@@ -23,7 +23,8 @@ impl IntoPointCloud for Frame {
                     // time: self.frame_header.time as u128,
                     metadata: vec![
                         PointMetaData {
-                            label: Some("mmwave".to_owned())
+                            label: Some("mmwave".to_owned()),
+                            device: Some(format!("{}", self.frame_header.version))
                         };
                         pc.len()
                     ],
