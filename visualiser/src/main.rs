@@ -40,8 +40,8 @@ impl RealTimePlot {
     fn draw<B: Backend>(&self, f: &mut Frame<B>, area: Rect) {
         let canvas = Canvas::default()
             .block(Block::default().borders(Borders::ALL).title("Plot"))
-            .x_bounds([-10.0, 10.0])
-            .y_bounds([-10.0, 10.0])
+            .x_bounds([-5.0, 5.0])
+            .y_bounds([-5.0, 5.0])
             .paint(|ctx| {
                 for p in &self.points {
                     ctx.draw(&tui::widgets::canvas::Points {

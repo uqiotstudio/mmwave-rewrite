@@ -115,7 +115,16 @@ async fn radar_loop(
         match provider.try_read() {
             Ok(frame) => {
                 // Got a frame and continue reading
-                match sender.send(frame).await {
+                let mut frame = frame.into_point_cloud();
+                frame.points = frame
+                    .points
+                    .iter()
+                    .map(|p| {
+                        let p2 = descriptor.transform.unapply([p[0], p[1], p[2]]);
+                        [p2[0], p2[1], p2[2], p[3]]
+                    })
+                    .collect();
+                match sender.send(PointCloudLike::PointCloud(frame)).await {
                     Ok(_) => {}
                     Err(_) => {
                         eprintln!("Error sending frame to manager, disconnecting");
