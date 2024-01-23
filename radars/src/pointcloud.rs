@@ -16,7 +16,7 @@ impl IntoPointCloud for PointCloudLike {
         match self {
             PointCloudLike::PointCloud(pc) => pc.into_point_cloud(),
             PointCloudLike::AWRFrame(pc) => pc.into_point_cloud(),
-            PointCloudLike::ZedCameraFrame => PointCloud::default(),
+            PointCloudLike::ZedCameraFrame(pc) => pc.into_point_cloud(),
         }
     }
 }

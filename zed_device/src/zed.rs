@@ -7,8 +7,8 @@ use libc::{c_void, size_t};
 use std::os::raw::c_float;
 
 #[repr(C)]
-#[derive(Serialize, Deserialize)]
-struct Point3D {
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Point3D {
     pub x: c_float,
     pub y: c_float,
     pub z: c_float,
@@ -34,12 +34,12 @@ extern "C" {
     fn free_body_list(body_list: BodyList);
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Message {
     pub bodies: Vec<BodyInfo>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct BodyInfo {
     pub keypoints: Vec<Point3D>,
 }

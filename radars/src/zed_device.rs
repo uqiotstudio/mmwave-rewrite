@@ -14,7 +14,7 @@ use zed_device::zed::{
 impl IntoPointCloud for Message {
     fn into_point_cloud(self) -> crate::pointcloud::PointCloud {
         let mut points: Vec<[f32; 4]> = Vec::new();
-        let metadata = Vec::new();
+        let mut metadata = Vec::new();
 
         for body_info in self.bodies {
             for keypoint in body_info.keypoints {
@@ -43,7 +43,6 @@ impl IntoPointCloud for Message {
 
 impl PointCloudProvider for Zed {
     fn try_read(&mut self) -> Result<crate::pointcloud::PointCloudLike, Box<dyn Error + Send>> {
-        self.try_read().ok()
-            Ok(PointCloudLike::ZedCameraFrame(message))
+        self.try_read().map(|m| PointCloudLike::ZedCameraFrame(m)).ok_or(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "")))
     }
 }
