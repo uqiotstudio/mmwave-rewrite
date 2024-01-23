@@ -1,2 +1,3 @@
 /target
 .direnv
+zed_device/cpp/build
