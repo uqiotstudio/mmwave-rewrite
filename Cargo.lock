@@ -2059,3 +2059,7 @@ dependencies = [
 [[package]]
 name = "zed_device"
 version = "0.1.0"
+dependencies = [
+ "cc",
+ "libc",
+]

@@ -9,7 +9,7 @@ Camera zed;
 BodyTrackingParameters detection_parameters;
 BodyTrackingRuntimeParameters detection_parameters_rt;
 
-void init_zed() {
+extern "C" void init_zed() {
     // Initialize ZED Camera
     InitParameters init_parameters;
     init_parameters.camera_resolution = RESOLUTION::HD720;
@@ -45,7 +45,7 @@ void init_zed() {
     detection_parameters_rt.detection_confidence_threshold = 40;
 }
 
-BodyList poll_body_keypoints() {
+extern "C" BodyList poll_body_keypoints() {
     BodyList body_list;
     body_list.num_bodies = 0;
     body_list.bodies = nullptr;
@@ -77,11 +77,11 @@ BodyList poll_body_keypoints() {
     return body_list;
 }
 
-void close_zed() {
+extern "C" void close_zed() {
     zed.close();
 }
 
-void free_body_list(BodyList body_list) {
+extern "C" void free_body_list(BodyList body_list) {
     for (size_t i = 0; i < body_list.num_bodies; i++) {
         delete[] body_list.bodies[i].points;
     }
