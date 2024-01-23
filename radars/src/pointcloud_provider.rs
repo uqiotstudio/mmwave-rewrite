@@ -1,7 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use ti_device::radar::AwrDescriptor;
-
+use zed_device::zed::{
+    Message,
+    Zed,
+    ZedDescriptor
+};
 use crate::{pointcloud::PointCloudLike, transform::Transform};
 
 pub trait PointCloudProvider: Send {
@@ -11,6 +15,7 @@ pub trait PointCloudProvider: Send {
 #[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Clone)]
 pub enum DeviceDescriptor {
     AWR(AwrDescriptor),
+    ZED(ZedDescriptor),
 }
 
 #[derive(PartialEq, Serialize, Deserialize, Debug, Clone)]
@@ -28,6 +33,9 @@ impl PcPDescriptor {
                     .try_initialize()
                     .map_err(|e| Into::<Box<dyn Error>>::into(e))?,
             ),
+            DeviceDescriptor::ZED(descriptor) => Box::new(
+                descriptor.clone().try_initialize().map_err(|e| Into::<Box<dyn Error>>::into(e))?,
+            )
         })
     }
 }

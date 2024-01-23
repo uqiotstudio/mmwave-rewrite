@@ -4,3 +4,4 @@ pub mod manager;
 pub mod pointcloud;
 pub mod pointcloud_provider;
 pub mod transform;
+pub mod zed_device;

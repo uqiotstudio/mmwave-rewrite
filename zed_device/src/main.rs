@@ -1,3 +1,5 @@
+pub mod zed;
+
 extern crate libc;
 
 use libc::{c_void, size_t};

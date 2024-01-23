@@ -8,7 +8,7 @@ pub trait IntoPointCloud: Serialize + DeserializeOwned {
 pub enum PointCloudLike {
     PointCloud(PointCloud),
     AWRFrame(ti_device::message::Frame),
-    ZedCameraFrame,
+    ZedCameraFrame(zed_device::zed::Message),
 }
 
 impl IntoPointCloud for PointCloudLike {
