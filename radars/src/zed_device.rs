@@ -17,11 +17,11 @@ impl IntoPointCloud for Message {
         let mut metadata = Vec::new();
 
         for body_info in self.bodies {
-            for keypoint in body_info.keypoints {
+            for (i, keypoint) in body_info.keypoints.iter().enumerate() {
                 // Convert the zed::Point3D to your PointMetaData struct
                 let point_metadata = PointMetaData {
-                    label: None, // Set this to appropriate label if needed
-                    device: None, // Set this to appropriate device info if needed
+                    label: Some(format!("{}", i)), // Set this to appropriate label if needed
+                    device: Some("zed".to_owned()), // Set this to appropriate device info if needed
                 };
                 points.push([keypoint.x, keypoint.y, keypoint.z, 0.0]);
                 metadata.push(point_metadata);
