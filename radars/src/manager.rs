@@ -13,6 +13,7 @@ use crate::pointcloud_provider::PcPDescriptor;
 use crate::pointcloud_provider::PointCloudProvider;
 
 pub struct Manager {
+    machine_id: usize,
     config: Configuration,
     pointcloud_sender: mpsc::Sender<PointCloudLike>,
     pointcloud_receiver: mpsc::Receiver<PointCloudLike>,
@@ -22,10 +23,11 @@ pub struct Manager {
 }
 
 impl Manager {
-    pub fn new() -> Self {
+    pub fn new(machine_id: usize) -> Self {
         let (tx, rx) = watch::channel(false);
         let (tx2, rx2) = mpsc::channel(100);
         Manager {
+            machine_id,
             config: Configuration {
                 descriptors: Vec::new(),
             },
@@ -69,6 +71,9 @@ impl Manager {
     fn start(&mut self) {
         println!("Starting up all radar instances");
         for descriptor in self.config.descriptors.iter() {
+            if descriptor.machine_id != self.machine_id {
+                continue;
+            }
             match descriptor.clone().try_initialize() {
                 Ok(radar_instance) => {
                     println!("Radar instance {:#?} spawned", descriptor);

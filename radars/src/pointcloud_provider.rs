@@ -20,6 +20,7 @@ pub enum DeviceDescriptor {
 
 #[derive(PartialEq, Serialize, Deserialize, Debug, Clone)]
 pub struct PcPDescriptor {
+    pub machine_id: usize,
     pub device_descriptor: DeviceDescriptor,
     pub transform: Transform,
 }

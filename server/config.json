@@ -1,6 +1,7 @@
 {
     "descriptors": [
         {
+            "machine_id": 0,
             "device_descriptor": {
                 "AWR": {
                     "serial": "R2091049",
@@ -14,6 +15,7 @@
             }
         },
         {
+            "machine_id": 0,
             "device_descriptor": {
                 "AWR": {
                     "serial": "00E23FD7",
@@ -24,6 +26,18 @@
             "transform": {
                 "translation" : [0, 1.75, 0],
                 "orientation": [0, 0]
+            }
+        },
+        {
+            "machine_id": 0,
+            "device_descriptor": {
+                "ZED": {
+                    
+                }
+            },
+            "transform": {
+                "translation" : [1.75, 0, 0],
+                "orientation": [1.57, 0]
             }
         }
     ]

@@ -102,7 +102,7 @@ async fn accumulator_handler(
     mut rx: Receiver<PointCloudMessage>,
     file_path: String,
 ) {
-    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    let mut interval = tokio::time::interval(Duration::from_secs(15));
 
     loop {
         tokio::select! {
@@ -118,23 +118,26 @@ async fn accumulator_handler(
             },
             _ = interval.tick() => {
                 let popped_data = accumulator.lock().await.pop_finished();
-                if !popped_data.is_empty() {
-                    let mut file = std::fs::OpenOptions::new().read(true).open(&file_path).unwrap_or_else(|_| File::create(&file_path).unwrap());
-                    let mut contents = String::new();
-                    file.read_to_string(&mut contents).expect("Unable to read file");
-                    let mut existing_data: Vec<PointCloud> = serde_json::from_str(&contents).unwrap_or_else(|_| Vec::new());
+                let file_path = file_path.clone();
+                tokio::task::spawn(async move {
+                    if !popped_data.is_empty() {
+                        let mut file = std::fs::OpenOptions::new().read(true).open(&file_path).unwrap_or_else(|_| File::create(&file_path).unwrap());
+                        let mut contents = String::new();
+                        file.read_to_string(&mut contents).expect("Unable to read file");
+                        let mut existing_data: Vec<PointCloud> = serde_json::from_str(&contents).unwrap_or_else(|_| Vec::new());
 
-                    // Append new data
-                    let popped_len = popped_data.len();
-                    existing_data.extend(popped_data);
+                        // Append new data
+                        let popped_len = popped_data.len();
+                        existing_data.extend(popped_data);
 
-                    // Reserialize and write back
-                    let serialized_data = serde_json::to_string(&existing_data).expect("Unable to serialize data");
-                    let mut file = File::create(&file_path).expect("Unable to create file");
-                    file.write_all(serialized_data.as_bytes()).expect("Unable to write data");
+                        // Reserialize and write back
+                        let serialized_data = serde_json::to_string(&existing_data).expect("Unable to serialize data");
+                        let mut file = File::create(&file_path).expect("Unable to create file");
+                        file.write_all(serialized_data.as_bytes()).expect("Unable to write data");
 
-                    println!("Updated out.json with {} items", popped_len);
-                }
+                        println!("Updated out.json with {} items", popped_len);
+                    }
+                });
             }
         }
     }

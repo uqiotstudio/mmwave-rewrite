@@ -77,10 +77,10 @@ impl RealTimePlot {
                         y2: c.j,
                         color: c.c,
                     });
-                    ctx.draw(&tui::widgets::canvas::Points {
-                        coords: todo!(),
-                        color: todo!(),
-                    });
+                    // ctx.draw(&tui::widgets::canvas::Points {
+                    //     coords: todo!(),
+                    //     color: todo!(),
+                    // });
                 }
             });
 

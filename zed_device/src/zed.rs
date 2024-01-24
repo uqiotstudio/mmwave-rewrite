@@ -68,14 +68,17 @@ impl Zed {
         for body in bodies_slice.iter() {
             let keypoints_slice =
                 unsafe { std::slice::from_raw_parts(body.points, body.num_points as usize) };
-            let keypoints = keypoints_slice
+            let Some(keypoints) = keypoints_slice
                 .iter()
-                .map(|kp| Point3D {
+                .nth(1)
+                .map(|kp| vec![Point3D {
                     x: kp.x,
-                    y: kp.y,
-                    z: kp.z,
-                })
-                .collect();
+                    y: kp.z,
+                    z: kp.y,
+                }]) else {
+                continue;
+            };
+
             bodies.push(BodyInfo { keypoints });
         }
 
@@ -104,6 +107,6 @@ pub struct ZedDescriptor {
 
 impl ZedDescriptor {
     pub fn try_initialize(self) -> Result<Zed, Box<dyn std::error::Error>> {
-        Ok(Zed {})
+        Ok(Zed::new())
     }
 }

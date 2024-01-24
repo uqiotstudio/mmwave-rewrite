@@ -4,6 +4,12 @@ use std::process::Command;
 use std::fs;
 
 fn main() {
+    // Update ld_library_path
+    let ld_library_path = env::var("LD_LIBRARY_PATH").unwrap_or_default();
+    let new_ld_library_path = format!("{}:{}/cpp/build", ld_library_path, env::current_dir().unwrap().display());
+    println!("cargo:rustc-env=LD_LIBRARY_PATH={}", new_ld_library_path);
+
+    
     // Define the path to your C++ source files and build directory
     let cpp_source_dir = "cpp";
     let build_dir = "cpp/build";
@@ -53,5 +59,3 @@ fn main() {
         println!("Warning: Shared library file not found at {}", shared_lib_path.display());
     }
 }
-
-

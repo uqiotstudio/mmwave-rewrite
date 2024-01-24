@@ -25,7 +25,7 @@ extern "C" void init_zed() {
 
     // Setup Body Tracking
     detection_parameters.detection_model = BODY_TRACKING_MODEL::HUMAN_BODY_MEDIUM;
-    detection_parameters.body_format = BODY_FORMAT::BODY_38;
+    detection_parameters.body_format = BODY_FORMAT::BODY_18;
     detection_parameters.image_sync = true;
     detection_parameters.enable_tracking = true;
     detection_parameters.enable_body_fitting = true;
