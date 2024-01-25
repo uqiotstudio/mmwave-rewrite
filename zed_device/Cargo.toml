@@ -18,3 +18,6 @@ lto = true
 
 [build]
 script = "build.rs"
+
+[features]
+zed_camera = []
