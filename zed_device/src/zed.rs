@@ -1,4 +1,3 @@
-
 extern crate libc;
 
 use serde::{Deserialize, Serialize};
@@ -21,18 +20,45 @@ struct Body {
 }
 
 #[repr(C)]
-struct BodyList {
+pub struct BodyList {
     num_bodies: size_t,
     bodies: *mut Body,
 }
 
-#[link(name = "zed_interface_lib")]
-extern "C" {
-    fn init_zed();
-    fn poll_body_keypoints() -> BodyList;
-    fn close_zed();
-    fn free_body_list(body_list: BodyList);
+#[cfg(feature = "zed_camera")]
+mod zed_camera_support {
+    use super::*;
+    #[link(name = "zed_interface_lib")]
+    extern "C" {
+        pub fn init_zed();
+        pub fn poll_body_keypoints() -> BodyList;
+        pub fn close_zed();
+        pub fn free_body_list(body_list: BodyList);
+    }
 }
+
+#[cfg(not(feature = "zed_camera"))]
+mod zed_camera_support {
+    use super::*;
+    pub fn init_zed() {
+        panic!("Zed camera feature is not enabled");
+    }
+
+    pub fn poll_body_keypoints() -> BodyList {
+        panic!("Zed camera feature is not enabled");
+    }
+
+    pub fn close_zed() {
+        panic!("Zed camera feature is not enabled");
+    }
+
+    pub fn free_body_list(body_list: BodyList) {
+        panic!("Zed camera feature is not enabled");
+    }
+}
+
+// Re-export the functions so they can be used directly under the module's namespace.
+pub use zed_camera_support::*;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Message {
@@ -68,14 +94,13 @@ impl Zed {
         for body in bodies_slice.iter() {
             let keypoints_slice =
                 unsafe { std::slice::from_raw_parts(body.points, body.num_points as usize) };
-            let Some(keypoints) = keypoints_slice
-                .iter()
-                .nth(1)
-                .map(|kp| vec![Point3D {
+            let Some(keypoints) = keypoints_slice.iter().nth(1).map(|kp| {
+                vec![Point3D {
                     x: kp.x,
                     y: kp.z,
                     z: kp.y,
-                }]) else {
+                }]
+            }) else {
                 continue;
             };
 
@@ -99,11 +124,8 @@ impl Drop for Zed {
     }
 }
 
-
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ZedDescriptor {
-    
-}
+pub struct ZedDescriptor {}
 
 impl ZedDescriptor {
     pub fn try_initialize(self) -> Result<Zed, Box<dyn std::error::Error>> {
