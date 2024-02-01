@@ -19,7 +19,12 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
 
     let ip_address = args.get(1).cloned().unwrap_or("localhost".to_owned());
-    let machine_id: usize = args.get(2).cloned().unwrap_or("0".to_owned()).parse().expect("Requires positive number for machine_id");
+    let machine_id: usize = args
+        .get(2)
+        .cloned()
+        .unwrap_or("0".to_owned())
+        .parse()
+        .expect("Requires positive number for machine_id");
 
     let url = loop {
         match Url::parse(&format!("ws://{}:3000/ws", ip_address)) {
