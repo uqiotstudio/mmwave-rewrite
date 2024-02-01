@@ -4,3 +4,11 @@ use crate::pointcloud_provider::PcPDescriptor;
 pub struct Configuration {
     pub descriptors: Vec<PcPDescriptor>,
 }
+
+impl Default for Configuration {
+    fn default() -> Self {
+        Self {
+            descriptors: Vec::new(),
+        }
+    }
+}
