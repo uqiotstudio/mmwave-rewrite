@@ -1,7 +1,35 @@
 {
     "descriptors": [
         {
-            "machine_id": 0,
+            "machine_id": 1,
+            "device_descriptor": {
+                "AWR": {
+                    "serial": "00E23E8E",
+                    "model": "AWR1843AOP",
+                    "config_path": "./profile_AWR1843_AOP.cfg"
+                }
+            },
+            "transform": {
+                "translation": [0, 0, 1],
+                "orientation": [3.15, 0]
+            }
+        },
+        {
+            "machine_id": 3,
+            "device_descriptor": {
+                "AWR": {
+                    "serial": "00E23EA9",
+                    "model": "AWR1843AOP",
+                    "config_path": "./profile_AWR1843_AOP.cfg"
+                }
+            },
+            "transform": {
+                "translation": [5.4, 2, 1],
+                "orientation": [7.85, 0]
+            }
+        },
+        {
+            "machine_id": 5,
             "device_descriptor": {
                 "AWR": {
                     "serial": "R2091049",
@@ -10,34 +38,20 @@
                 }
             },
             "transform": {
-                "translation" : [0, -1.75, 0],
-                "orientation": [3.14159, 0]
+                "translation" : [-2.5, 2.1, 1.2],
+                "orientation": [-1.57, 0]
             }
         },
         {
-            "machine_id": 0,
-            "device_descriptor": {
-                "AWR": {
-                    "serial": "00E23FD7",
-                    "model": "AWR1843AOP",
-                    "config_path": "./profile_AWR1843_AOP.cfg"
-                }
-            },
-            "transform": {
-                "translation" : [0, 1.75, 0],
-                "orientation": [0, 0]
-            }
-        },
-        {
-            "machine_id": 0,
+            "machine_id": 5,
             "device_descriptor": {
                 "ZED": {
                     
                 }
             },
             "transform": {
-                "translation" : [1.75, 0, 0],
-                "orientation": [1.57, 0]
+                "translation" : [-2.5, 2.1, 1.4],
+                "orientation": [-1.57, 0]
             }
         }
     ]

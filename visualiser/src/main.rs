@@ -58,12 +58,12 @@ impl RealTimePlot {
     fn draw<B: Backend>(&self, f: &mut Frame<B>, area: Rect) {
         let canvas = Canvas::default()
             .block(Block::default().borders(Borders::ALL).title("Plot"))
-            .x_bounds([-5.0, 5.0])
-            .y_bounds([-5.0, 5.0])
+            .x_bounds([-6.0, 6.0])
+            .y_bounds([-0.5, 6.5])
             .paint(|ctx| {
                 for p in &self.points {
                     ctx.draw(&tui::widgets::canvas::Points {
-                        coords: &[(p.x, p.y)],
+                        coords: &[(-p.x, -p.y)],
                         color: p.c,
                     });
                     // ctx.print(p.x, p.y, symbols::DOT, Style::default().fg(p.color));
@@ -71,10 +71,10 @@ impl RealTimePlot {
                 }
                 for c in &self.cameras {
                     ctx.draw(&tui::widgets::canvas::Line {
-                        x1: c.x,
-                        y1: c.y,
-                        x2: c.i,
-                        y2: c.j,
+                        x1: -c.x,
+                        y1: -c.y,
+                        x2: -c.i,
+                        y2: -c.j,
                         color: c.c,
                     });
                     // ctx.draw(&tui::widgets::canvas::Points {
