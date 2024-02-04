@@ -29,7 +29,7 @@
             }
         },
         {
-            "machine_id": 0,
+            "machine_id": 1,
             "device_descriptor": {
                 "ZED": {
                     
@@ -38,6 +38,18 @@
             "transform": {
                 "translation" : [1.75, 0, 0],
                 "orientation": [1.57, 0]
+            }
+        },
+        {
+            "machine_id": 0,
+            "device_descriptor": {
+                "Playback": {
+                    "path": "./out.json"
+                }
+            },
+            "transform": {
+                "translation" : [0, 0, 0],
+                "orientation": [0, 0]
             }
         }
     ]

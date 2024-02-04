@@ -41,7 +41,7 @@ NIX_ENFORCE_NO_NATIVE='1'
 export NIX_ENFORCE_NO_NATIVE
 NIX_HARDENING_ENABLE='fortify fortify3 stackprotector pic strictoverflow format relro bindnow'
 export NIX_HARDENING_ENABLE
-NIX_LDFLAGS='-rpath /home/mcarthur/Dev/mmwave/outputs/out/lib  -L/nix/store/aglgni7yskphxmpdkc8yvah61drjfkqk-systemd-minimal-libs-254.3/lib -L/nix/store/4gassvc0bjajf1kzjrllp599z6acx2zn-alsa-lib-1.2.9/lib -L/nix/store/hywr2z0bbf7vrhii1bwp09xcinmzy3n4-rustc-1.73.0/lib -L/nix/store/k3d7ny5h682kixy91iw7sm653kxyqr8d-openssl-3.0.12/lib -L/nix/store/mdxa9k44xzha1bwwdr3wrbxs4ncb03sq-libxcb-1.16/lib -L/nix/store/b7pb0mmcwjp973nj8gcaa2fnmqxckc8q-libX11-1.8.7/lib -L/nix/store/70iyy9bchq62rl5wv9qhcpqpwnd3hysx-libXcursor-1.2.1/lib -L/nix/store/k702cjsmaaxs1qfyxp0jydbcz1hq21aj-libXfixes-6.0.1/lib -L/nix/store/kwjc7cgrip6smiq2xlsr7yrl3rgklwvs-libXau-1.0.11/lib -L/nix/store/qyyw5j9xn5mnjlv5f469h12clp4wdj7b-libXext-1.3.5/lib -L/nix/store/r49dd7lhwcbszkndp327sk4p4l1zbdv1-libXi-1.8.1/lib -L/nix/store/l2gsmsw408463p7bnxmwjlkf551sglkj-libXrender-0.9.11/lib -L/nix/store/z1ain3k4hk3hklq1pvnsgimff5gx8204-libXrandr-1.5.4/lib -L/nix/store/aglgni7yskphxmpdkc8yvah61drjfkqk-systemd-minimal-libs-254.3/lib -L/nix/store/4gassvc0bjajf1kzjrllp599z6acx2zn-alsa-lib-1.2.9/lib -L/nix/store/hywr2z0bbf7vrhii1bwp09xcinmzy3n4-rustc-1.73.0/lib -L/nix/store/k3d7ny5h682kixy91iw7sm653kxyqr8d-openssl-3.0.12/lib -L/nix/store/mdxa9k44xzha1bwwdr3wrbxs4ncb03sq-libxcb-1.16/lib -L/nix/store/b7pb0mmcwjp973nj8gcaa2fnmqxckc8q-libX11-1.8.7/lib -L/nix/store/70iyy9bchq62rl5wv9qhcpqpwnd3hysx-libXcursor-1.2.1/lib -L/nix/store/k702cjsmaaxs1qfyxp0jydbcz1hq21aj-libXfixes-6.0.1/lib -L/nix/store/kwjc7cgrip6smiq2xlsr7yrl3rgklwvs-libXau-1.0.11/lib -L/nix/store/qyyw5j9xn5mnjlv5f469h12clp4wdj7b-libXext-1.3.5/lib -L/nix/store/r49dd7lhwcbszkndp327sk4p4l1zbdv1-libXi-1.8.1/lib -L/nix/store/l2gsmsw408463p7bnxmwjlkf551sglkj-libXrender-0.9.11/lib -L/nix/store/z1ain3k4hk3hklq1pvnsgimff5gx8204-libXrandr-1.5.4/lib'
+NIX_LDFLAGS='-rpath /home/mcarthur/Dev/mmWave-dash/mmwave-rewrite/outputs/out/lib  -L/nix/store/aglgni7yskphxmpdkc8yvah61drjfkqk-systemd-minimal-libs-254.3/lib -L/nix/store/4gassvc0bjajf1kzjrllp599z6acx2zn-alsa-lib-1.2.9/lib -L/nix/store/hywr2z0bbf7vrhii1bwp09xcinmzy3n4-rustc-1.73.0/lib -L/nix/store/k3d7ny5h682kixy91iw7sm653kxyqr8d-openssl-3.0.12/lib -L/nix/store/mdxa9k44xzha1bwwdr3wrbxs4ncb03sq-libxcb-1.16/lib -L/nix/store/b7pb0mmcwjp973nj8gcaa2fnmqxckc8q-libX11-1.8.7/lib -L/nix/store/70iyy9bchq62rl5wv9qhcpqpwnd3hysx-libXcursor-1.2.1/lib -L/nix/store/k702cjsmaaxs1qfyxp0jydbcz1hq21aj-libXfixes-6.0.1/lib -L/nix/store/kwjc7cgrip6smiq2xlsr7yrl3rgklwvs-libXau-1.0.11/lib -L/nix/store/qyyw5j9xn5mnjlv5f469h12clp4wdj7b-libXext-1.3.5/lib -L/nix/store/r49dd7lhwcbszkndp327sk4p4l1zbdv1-libXi-1.8.1/lib -L/nix/store/l2gsmsw408463p7bnxmwjlkf551sglkj-libXrender-0.9.11/lib -L/nix/store/z1ain3k4hk3hklq1pvnsgimff5gx8204-libXrandr-1.5.4/lib -L/nix/store/aglgni7yskphxmpdkc8yvah61drjfkqk-systemd-minimal-libs-254.3/lib -L/nix/store/4gassvc0bjajf1kzjrllp599z6acx2zn-alsa-lib-1.2.9/lib -L/nix/store/hywr2z0bbf7vrhii1bwp09xcinmzy3n4-rustc-1.73.0/lib -L/nix/store/k3d7ny5h682kixy91iw7sm653kxyqr8d-openssl-3.0.12/lib -L/nix/store/mdxa9k44xzha1bwwdr3wrbxs4ncb03sq-libxcb-1.16/lib -L/nix/store/b7pb0mmcwjp973nj8gcaa2fnmqxckc8q-libX11-1.8.7/lib -L/nix/store/70iyy9bchq62rl5wv9qhcpqpwnd3hysx-libXcursor-1.2.1/lib -L/nix/store/k702cjsmaaxs1qfyxp0jydbcz1hq21aj-libXfixes-6.0.1/lib -L/nix/store/kwjc7cgrip6smiq2xlsr7yrl3rgklwvs-libXau-1.0.11/lib -L/nix/store/qyyw5j9xn5mnjlv5f469h12clp4wdj7b-libXext-1.3.5/lib -L/nix/store/r49dd7lhwcbszkndp327sk4p4l1zbdv1-libXi-1.8.1/lib -L/nix/store/l2gsmsw408463p7bnxmwjlkf551sglkj-libXrender-0.9.11/lib -L/nix/store/z1ain3k4hk3hklq1pvnsgimff5gx8204-libXrandr-1.5.4/lib'
 export NIX_LDFLAGS
 NIX_NO_SELF_RPATH='1'
 NIX_PKG_CONFIG_WRAPPER_TARGET_HOST_x86_64_unknown_linux_gnu='1'
@@ -140,7 +140,7 @@ name='nix-shell-env'
 export name
 nativeBuildInputs='/nix/store/ljrkf0kwgckcy02kdlz8sjdnxb2pwjb4-pkg-config-wrapper-0.29.2 /nix/store/3ghnv1f2qbhzzjxswy511p7whxm41d1r-systemd-minimal-libs-254.3-dev /nix/store/9r6rcvcvbpajmacpxs749gcixchaz3mb-alsa-lib-1.2.9-dev /nix/store/ljrkf0kwgckcy02kdlz8sjdnxb2pwjb4-pkg-config-wrapper-0.29.2'
 export nativeBuildInputs
-out='/home/mcarthur/Dev/mmwave/outputs/out'
+out='/home/mcarthur/Dev/mmWave-dash/mmwave-rewrite/outputs/out'
 export out
 outputBin='out'
 outputDev='out'
@@ -171,7 +171,7 @@ preConfigurePhases=' updateAutotoolsGnuConfigScriptsPhase'
 declare -a preFixupHooks=('_moveToShare' '_multioutDocs' '_multioutDevs' )
 preferLocalBuild='1'
 export preferLocalBuild
-prefix='/home/mcarthur/Dev/mmwave/outputs/out'
+prefix='/home/mcarthur/Dev/mmWave-dash/mmwave-rewrite/outputs/out'
 declare -a propagatedBuildDepFiles=('propagated-build-build-deps' 'propagated-native-build-inputs' 'propagated-build-target-deps' )
 propagatedBuildInputs=''
 export propagatedBuildInputs

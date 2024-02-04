@@ -124,7 +124,7 @@ impl Drop for Zed {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Default)]
 pub struct ZedDescriptor {}
 
 impl ZedDescriptor {

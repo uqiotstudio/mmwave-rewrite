@@ -5,18 +5,29 @@ use crate::error::RadarInitError;
 use crate::error::RadarReadError;
 use crate::{connection::Connection, message::Frame};
 use std::error::Error;
+use std::fmt::Display;
 use std::{fs::File, io::Read};
 
-#[derive(PartialEq, Eq, Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub enum Model {
+    #[default]
     AWR1843Boost,
     AWR1843AOP,
+}
+
+impl Display for Model {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Model::AWR1843Boost => f.write_str("AWR1843Boost"),
+            Model::AWR1843AOP => f.write_str("AWR1843AOP"),
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Transform {}
 
-#[derive(PartialEq, Eq, Debug, Clone, serde::Serialize)]
+#[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, Default)]
 pub struct AwrDescriptor {
     pub serial: String, // Serial id for the USB device (can be found with lsusb, etc)
     pub model: Model,   // Model of the USB device

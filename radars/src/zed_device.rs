@@ -1,15 +1,12 @@
-use std::{
-    error::Error,
-    time::{SystemTime, UNIX_EPOCH},
-};
 use crate::{
     pointcloud::{IntoPointCloud, PointCloud, PointCloudLike, PointMetaData},
     pointcloud_provider::PointCloudProvider,
 };
-use zed_device::zed::{
-    Message,
-    Zed
+use std::{
+    error::Error,
+    time::{SystemTime, UNIX_EPOCH},
 };
+use zed_device::zed::{Message, Zed};
 
 impl IntoPointCloud for Message {
     fn into_point_cloud(self) -> crate::pointcloud::PointCloud {
@@ -40,9 +37,10 @@ impl IntoPointCloud for Message {
     }
 }
 
-
 impl PointCloudProvider for Zed {
     fn try_read(&mut self) -> Result<crate::pointcloud::PointCloudLike, Box<dyn Error + Send>> {
-        self.try_read().map(|m| PointCloudLike::ZedCameraFrame(m)).ok_or(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "")))
+        self.try_read()
+            .map(|m| PointCloudLike::ZedCameraFrame(m))
+            .ok_or(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "")))
     }
 }
