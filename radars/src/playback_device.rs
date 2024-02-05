@@ -37,40 +37,30 @@ impl Playback {
     pub fn try_read(&mut self) -> Option<PointCloud> {
         // Gets the time since last read
         // keep bumping up index until we hit the first time after indexed time + time passed, and then return the pointcloud *before* index.
-
-        let item = self.recording.get(self.index)?;
-        let duration = item.time - self.last_read;
-        self.last_read = item.time;
-        self.index += 1;
-
-        // Track the real duration and bump it up
-        let real_duration = time::Instant::now().duration_since(self.last_read);
-        self.last_read = time::Instant::now();
-
-        // Get the last item
-        let start = self.recording.get(self.index)?;
-        self.index += 1;
-        while let Some(item) = self.recording.get(self.index) {
-            let recording_passed = (item.time - start.time); // in ms
-            if recording_passed > real_duration.as_millis() {
-                // We hit something further forward than we passed, go back a step and break with this index
-                self.index -= 1;
-                let mut item = item.clone();
-                item.time = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis();
-                return Some(item);
-            }
-            self.index += 1;
-        }
-
         if self.index > self.recording.len() {
             self.index = 0;
-            self.last_read = time::Instant::now();
         }
 
-        None
+        let item = self.recording.get(self.index)?;
+        if self.last_read > item.time {}
+        let duration = if self.last_read > item.time {
+            0
+        } else {
+            (item.time - self.last_read).min(1000) // no more than 1 second duration between frames
+        };
+        self.last_read = item.time;
+        self.index += 1;
+        dbg!(duration as f64 / 1000.0);
+        dbg!(&self.index);
+
+        std::thread::sleep(time::Duration::from_millis(duration as u64));
+
+        let mut result = item.clone();
+        result.time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|m| m.as_millis())
+            .unwrap_or(0);
+        Some(result)
     }
 }
 

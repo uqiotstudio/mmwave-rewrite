@@ -8,7 +8,7 @@ use axum::{
     },
     http::StatusCode,
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use message::{ConfigMessage, PointCloudMessage, ServerMessage};
@@ -57,35 +57,37 @@ async fn main() {
     });
 
     // Spawn a task to update the config file every 10 seconds
-    let app_state_cloned = app_state.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
-        loop {
-            interval.tick().await;
+    // let app_state_cloned = app_state.clone();
+    // tokio::spawn(async move {
+    //     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+    //     loop {
+    //         interval.tick().await;
 
-            let file = File::open("./server/config.json").unwrap();
-            let reader = BufReader::new(file);
-            let Ok(new_config): Result<Configuration, _> = serde_json::from_reader(reader) else {
-                println!("Current Config Invalid! Unable to load.");
-                continue;
-            };
+    //         let file = File::open("./server/config.json").unwrap();
+    //         let reader = BufReader::new(file);
+    //         let Ok(new_config): Result<Configuration, _> = serde_json::from_reader(reader) else {
+    //             println!("Current Config Invalid! Unable to load.");
+    //             continue;
+    //         };
 
-            if app_state_cloned.config.lock().await.clone() != new_config {
-                println!("Config Reloaded!");
-                *app_state_cloned.config.lock().await = new_config;
-            }
-        }
-    });
+    //         if app_state_cloned.config.lock().await.clone() != new_config {
+    //             println!("Config Reloaded!");
+    //             *app_state_cloned.config.lock().await = new_config;
+    //         }
+    //     }
+    // });
 
     // Spawn the main loop task
     tokio::spawn(async move {
         accumulator_handler(accumulator_clone, rx, "out.json".to_string()).await
     });
 
+    let app_state_cloned = app_state.clone();
     let app = Router::new()
         .route("/ws", get(websocket_handler))
         .route("/get_pointcloud", get(get_pointcloud_handler))
         .route("/get_config", get(get_config_handler))
+        .route("/set_config", post(set_config_handler))
         .with_state(app_state);
 
     // let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -217,4 +219,24 @@ async fn get_config_handler(State(state): State<Arc<AppState>>) -> impl IntoResp
             "Failed to serialize config".into(),
         ),
     }
+}
+
+// async fn set_config_handler(
+//     Json(payload): Json<Value>,
+//     Extension(state): Extension<Arc<AppState>>,
+// ) -> impl IntoResponse {
+// }
+
+async fn set_config_handler(State(state): State<Arc<AppState>>, message: String) {
+    let Ok(config) = serde_json::from_str::<Configuration>(&message) else {
+        return;
+    };
+
+    *state.config.lock().await = config;
+
+    // Write the config to the config.json file
+    let Ok(mut file) = File::create("./server/produced_config.json") else {
+        return;
+    };
+    file.write_all(message.as_bytes());
 }
