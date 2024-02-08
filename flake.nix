@@ -1,38 +1,66 @@
 {
   inputs = {
-    naersk.url = "github:nix-community/naersk/master";
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    utils.url = "github:numtide/flake-utils";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    crane.url = "github:ipetkov/crane";
+    crane.inputs.nixpkgs.follows = "nixpkgs";
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, utils, naersk }:
-    utils.lib.eachDefaultSystem (system:
+  outputs = { self, nixpkgs, flake-utils, crane, ... }:
+    flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        naersk-lib = pkgs.callPackage naersk { };
+        craneLib = crane.lib.${system};
+        libs = with pkgs; [
+          libGL
+          libxkbcommon
+          udev
+          openssl
+          wayland
+          xorg.libX11
+          xorg.libXcursor
+          xorg.libXi
+          xorg.libXrandr
+          dbus
+          pkg-config
+        ];
+        libPath = pkgs.lib.makeLibraryPath libs;
+        my-crate = craneLib.buildPackage {
+          src = craneLib.cleanCargoSource (craneLib.path ./.);
+          doCheck = true;
+          name = "mmwave-dash";
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+          buildInputs = with pkgs; [
+            xorg.libxcb
+          ];
+          postInstall = ''
+            wrapProgram "$out/bin/mmwave-dash" --prefix LD_LIBRARY_PATH : "${libPath}"
+          '';
+        };
       in
       {
-        defaultPackage = naersk-lib.buildPackage ./.;
-        devShell = with pkgs; mkShell {
-          nativeBuildInputs = with pkgs; [ pkg-config udev alsa-lib pkg-config ];
-          buildInputs = with pkgs; [ 
-            cargo rustc rustfmt rust-analyzer rustPackages.clippy rustup
-            openssl
-            # X support:
-            xorg.libX11 
-            xorg.libXcursor 
-            xorg.libXi 
-            xorg.libXrandr
-          ]; 
-          RUST_SRC_PATH = rustPlatform.rustLibSrc;
-          shellHook = ''export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${pkgs.lib.makeLibraryPath [
-            pkgs.vulkan-loader
-            # Wayland Support
-            pkgs.wayland
-            pkgs.libxkbcommon
-          ]}" && export PATH="$PATH:$HOME/.cargo/bin"
-          '';
-         };
+        checks = {
+          inherit my-crate;
+        };
+
+        packages.default = my-crate;
+
+        app.default = flake-utils.lib.mkApp {
+          drv = my-crate;
+        };
+
+        devShell = craneLib.devShell {
+          checks = self.checks.${system};
+
+          RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
+          LD_LIBRARY_PATH = libPath;
+
+          packages = with pkgs; [
+            rustfmt
+            rust-analyzer
+            rustPackages.clippy
+            rustup
+          ] ++ libs;
+        };
       });
 }
-

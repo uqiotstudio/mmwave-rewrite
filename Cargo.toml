@@ -1,17 +1,44 @@
-[workspace]
-members = [
-  "ti_device",
-  "server",
-  "radars",
-  "client",
-  "zed_device",
-  "visualiser"
-]
-
-[workspace.package]
+[package]
+name = "mmwave"
 version = "0.1.0"
+edition = "2021"
 
-[workspace.dependencies]
-dora-node-api = "0.3.0"
-dora-operator-api = "0.3.0"
-dora-daemon = "0.3.0"
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+axum = {version="0.7.4", features=["ws"]}
+error = "0.1.9"
+libc = "0.2.153"
+ndarray = "0.15.6"
+regex = "1.10.3"
+reqwest = "0.11.24"
+rusb = "0.9.3"
+serde = {version="1.0.196", features=["derive"]}
+serde_json = "1.0.113"
+serialport = "4.3.0"
+tokio = {version="1.36.0", features=["full"]}
+udev = "0.8.0"
+
+[build-dependencies]
+cc = "1.0"
+
+[profile.release]
+lto = true
+
+[build]
+script = "build.rs"
+
+[features]
+zed_camera = []
+
+[[bin]]
+name = "sensor"
+path = "src/bin/client/sensor/sensor.rs"
+
+[[bin]]
+name = "dashboard"
+path = "src/bin/client/dashboard/dashboard.rs"
+
+[[bin]]
+name = "server"
+path = "src/bin/server/server.rs"
