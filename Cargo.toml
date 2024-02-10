@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 axum = {version="0.7.4", features=["ws"]}
 error = "0.1.9"
+futures-util = "0.3.30"
 libc = "0.2.153"
 ndarray = "0.15.6"
 regex = "1.10.3"

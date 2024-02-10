@@ -1,13 +1,13 @@
 use crate::core::pointcloud::PointCloud;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fmt,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 pub struct Accumulator {
     blocks: HashMap<u128, Vec<PointCloud>>,
-    finished: Vec<PointCloud>,
+    finished: VecDeque<PointCloud>,
     threshold: u128, // Threshold in ms before a block is complete
     peeked: bool,
 }
@@ -27,7 +27,7 @@ impl fmt::Debug for Accumulator {
                 .collect::<HashMap<_, _>>(),
         );
 
-        // Add custom formatting for 'finished'
+        // Add custom formatting for 'd'
         debug_struct.field("finished", &self.finished.len());
 
         // Add 'threshold' field
@@ -41,7 +41,7 @@ impl Accumulator {
     pub fn new(threshold: u128) -> Self {
         Accumulator {
             blocks: HashMap::new(),
-            finished: Vec::new(),
+            finished: VecDeque::new(),
             threshold,
             peeked: false,
         }
@@ -93,15 +93,15 @@ impl Accumulator {
                 });
                 if let Some(mut item) = merged_item {
                     item.time = block;
-                    self.finished.push(item);
+                    self.finished.push_back(item);
                     self.peeked = false;
                 }
             }
         }
     }
 
-    pub fn pop_finished(&mut self) -> Vec<PointCloud> {
-        let mut replacement = Vec::new();
+    pub fn pop_finished(&mut self) -> VecDeque<PointCloud> {
+        let mut replacement = VecDeque::new();
         std::mem::swap(&mut replacement, &mut self.finished);
         replacement
     }
@@ -110,12 +110,17 @@ impl Accumulator {
         !self.peeked
     }
 
-    pub fn peek(&mut self) -> Option<PointCloud> {
-        if self.peeked {
-            None
-        } else {
-            self.peeked = true;
-            self.finished.last().cloned()
+    pub async fn peek(&mut self) -> Option<PointCloud> {
+        while !self.peekable() {
+            // Recheck every 100ms
+            tokio::time::sleep(Duration::from_millis(100));
         }
+        self.peeked = true;
+        self.finished.back().cloned()
+    }
+
+    /// Returns the front of finished, which is the oldest item stored
+    pub async fn pop_single_finished(&mut self) -> Option<PointCloud> {
+        self.finished.pop_front()
     }
 }
