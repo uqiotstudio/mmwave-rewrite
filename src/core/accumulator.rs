@@ -2,7 +2,7 @@ use crate::core::pointcloud::PointCloud;
 use std::{
     collections::{HashMap, VecDeque},
     fmt,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 pub struct Accumulator {

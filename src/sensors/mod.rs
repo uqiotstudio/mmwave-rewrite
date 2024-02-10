@@ -3,7 +3,7 @@ pub mod playback;
 pub mod zed;
 
 use serde::{Deserialize, Serialize};
-use std::error::Error;
+
 
 use crate::core::{pointcloud::PointCloudLike, transform::Transform};
 
@@ -62,7 +62,7 @@ impl SensorDescriptor {
             SensorDescriptor::AWR(desc) => {
                 format!("{}@{}", desc.model, desc.serial)
             }
-            SensorDescriptor::ZED(desc) => {
+            SensorDescriptor::ZED(_desc) => {
                 format! {"ZED Camera"}
             }
             SensorDescriptor::Playback(desc) => {

@@ -2,9 +2,8 @@ extern crate libc;
 
 use serde::{Deserialize, Serialize};
 
-use libc::{c_void, size_t};
+use libc::{size_t};
 use std::{
-    error::Error,
     os::raw::c_float,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -56,7 +55,7 @@ mod zed_camera_support {
         panic!("Zed camera feature is not enabled");
     }
 
-    pub fn free_body_list(body_list: BodyList) {
+    pub fn free_body_list(_body_list: BodyList) {
         panic!("Zed camera feature is not enabled");
     }
 }

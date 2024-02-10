@@ -70,7 +70,7 @@ pub struct PlaybackDescriptor {
 
 impl PlaybackDescriptor {
     pub fn try_initialize(self) -> Result<Playback, SensorInitError> {
-        Ok(Playback::new(self.path).map_err(|e| SensorInitError::DeviceFailure)?)
+        Ok(Playback::new(self.path).map_err(|_e| SensorInitError::DeviceFailure)?)
     }
 }
 

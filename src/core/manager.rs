@@ -8,7 +8,7 @@ use tokio::{
 use crate::{
     core::config::Configuration,
     core::pointcloud::{IntoPointCloud, PointCloudLike},
-    sensors::{Sensor, SensorConfig, SensorDescriptor},
+    sensors::{Sensor, SensorConfig},
 };
 
 pub struct Manager {

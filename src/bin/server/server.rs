@@ -9,11 +9,7 @@ use axum::{
     Router,
 };
 use futures_util::{SinkExt, StreamExt};
-use mmwave::core::{
-    accumulator::Accumulator,
-    config::Configuration,
-    pointcloud::{self, PointCloud},
-};
+use mmwave::core::{accumulator::Accumulator, config::Configuration, pointcloud::PointCloud};
 use std::{
     fs::{File, OpenOptions},
     io::{BufReader, Write},
@@ -109,7 +105,7 @@ async fn websocket_handler(
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
-async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
+async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     let tx = state.tx.clone();
     let mut rx = state.rx.clone();
     let (mut socket_tx, mut socket_rx) = socket.split();
