@@ -30,18 +30,8 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
-    // Get the saved configuration
-    let config_file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true) // This will create the file if it doesn't exist.
-        .open("./config.json");
-
-    let config_file = config_file.expect("Failed to open or create './config.json'");
-    let reader = BufReader::new(config_file);
-    let config: Configuration = serde_json::from_reader(reader).expect("Unable to read config");
-    dbg!(&config);
-    let config = Arc::new(Mutex::new(config));
+    // Config is set up properly by a user, in the dashboard
+    let config = Arc::new(Mutex::new(Configuration::default()));
 
     let (mpsc_tx, mpsc_rx) = mpsc::channel::<PointCloud>(100);
     let (watch_tx, watch_rx) = watch::channel::<PointCloud>(PointCloud::default());
@@ -132,9 +122,15 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     let mut t2 = tokio::spawn(async move {
         loop {
             let pointcloud = rx.borrow_and_update().clone();
-            socket_tx.send(Message::Text(
-                serde_json::to_string(&pointcloud).unwrap_or("".to_owned()),
-            ));
+            if let Err(e) = socket_tx
+                .send(Message::Text(
+                    serde_json::to_string(&pointcloud).unwrap_or("".to_owned()),
+                ))
+                .await
+            {
+                eprintln!("Error receiving pointcloud from accumulator: {:#?}", e);
+                break;
+            }
             if let Err(e) = rx.changed().await {
                 eprintln!("Error receiving pointcloud from accumulator: {:#?}", e);
                 break;
@@ -166,10 +162,4 @@ async fn set_config_handler(State(state): State<Arc<AppState>>, message: String)
     };
 
     *state.config.lock().await = config;
-
-    // Write the config to the config.json file
-    let Ok(mut file) = File::create("./server/produced_config.json") else {
-        return;
-    };
-    file.write_all(message.as_bytes());
 }

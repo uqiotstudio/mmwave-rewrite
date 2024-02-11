@@ -2,8 +2,9 @@ pub mod awr;
 pub mod playback;
 pub mod zed;
 
-use serde::{Deserialize, Serialize};
+use std::hash::Hash;
 
+use serde::{Deserialize, Serialize};
 
 use crate::core::{pointcloud::PointCloudLike, transform::Transform};
 
@@ -21,6 +22,13 @@ pub struct SensorConfig {
     pub machine_id: usize,
     pub sensor_descriptor: SensorDescriptor,
     pub transform: Transform,
+}
+
+impl Hash for SensorConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.machine_id.hash(state);
+        self.sensor_descriptor.hash(state);
+    }
 }
 
 impl SensorConfig {
@@ -54,6 +62,14 @@ pub enum SensorInitError {
     InvalidTransform,
     DeviceFailure,
     RadarError(RadarInitError),
+}
+
+impl std::hash::Hash for SensorDescriptor {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Uses the title as the hash.
+        self.title().hash(state);
+        state.finish();
+    }
 }
 
 impl SensorDescriptor {
