@@ -6,7 +6,7 @@
                 "AWR": {
                     "serial": "00E23E8E",
                     "model": "AWR1843AOP",
-                    "config_path": "./profile_AWR1843_AOP.cfg"
+                    "config_path": "./config_files/profile_AWR1843_AOP.cfg"
                 }
             },
             "transform": {
@@ -20,7 +20,7 @@
                 "AWR": {
                     "serial": "00E23EA9",
                     "model": "AWR1843AOP",
-                    "config_path": "./profile_AWR1843_AOP.cfg"
+                    "config_path": "./config_files/profile_AWR1843_AOP.cfg"
                 }
             },
             "transform": {
@@ -34,7 +34,7 @@
                 "AWR": {
                     "serial": "R2091049",
                     "model": "AWR1843Boost",
-                    "config_path": "./profile_AWR1843B.cfg"
+                    "config_path": "./config_files/profile_AWR1843B.cfg"
                 }
             },
             "transform": {
@@ -48,7 +48,7 @@
                 "AWR": {
                     "serial": "00E23FD7",
                     "model": "AWR1843AOP",
-                    "config_path": "./profile_AWR1843_AOP.cfg"
+                    "config_path": "./config_files/profile_AWR1843_AOP.cfg"
                 }
             },
             "transform": {
@@ -72,7 +72,7 @@
             "machine_id": 0,
             "sensor_descriptor": {
                 "Playback": {
-                    "path": "./recording.json"
+                    "path": "./config_files/recording.json"
                 }
             },
             "transform": {

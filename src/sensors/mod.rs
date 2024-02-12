@@ -43,7 +43,7 @@ impl SensorConfig {
     }
 }
 
-#[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Clone)]
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Debug, Clone)]
 pub enum SensorDescriptor {
     AWR(AwrDescriptor),
     ZED(ZedDescriptor),
@@ -52,9 +52,8 @@ pub enum SensorDescriptor {
 
 #[derive(Debug)]
 pub enum SensorReadError {
-    Failed,
-    DeviceFailure,
-    RadarError(RadarReadError),
+    Critical,
+    Benign,
 }
 
 #[derive(Debug)]
@@ -64,13 +63,13 @@ pub enum SensorInitError {
     RadarError(RadarInitError),
 }
 
-impl std::hash::Hash for SensorDescriptor {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Uses the title as the hash.
-        self.title().hash(state);
-        state.finish();
-    }
-}
+// impl std::hash::Hash for SensorDescriptor {
+//     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+//         // Uses the title as the hash.
+//         self.title().hash(state);
+//         state.finish();
+//     }
+// }
 
 impl SensorDescriptor {
     pub fn title(&self) -> String {

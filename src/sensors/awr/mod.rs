@@ -21,7 +21,9 @@ use std::fmt::Display;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
-#[derive(PartialEq, Eq, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(
+    PartialEq, Hash, Eq, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Default,
+)]
 pub enum Model {
     #[default]
     AWR1843Boost,
@@ -40,7 +42,7 @@ impl Display for Model {
 #[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Transform {}
 
-#[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, Default)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone, serde::Serialize, Default)]
 pub struct AwrDescriptor {
     pub serial: String, // Serial id for the USB device (can be found with lsusb, etc)
     pub model: Model,   // Model of the USB device
@@ -209,6 +211,11 @@ impl Into<SensorInitError> for RadarInitError {
 
 impl Into<SensorReadError> for RadarReadError {
     fn into(self) -> SensorReadError {
-        SensorReadError::RadarError(self)
+        match self {
+            RadarReadError::Disconnected => SensorReadError::Critical,
+            RadarReadError::Timeout => SensorReadError::Benign,
+            RadarReadError::NotConnected => SensorReadError::Critical,
+            RadarReadError::ParseError(_) => SensorReadError::Benign,
+        }
     }
 }

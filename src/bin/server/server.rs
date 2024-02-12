@@ -9,13 +9,18 @@ use axum::{
     Router,
 };
 use futures_util::{SinkExt, StreamExt};
-use mmwave::core::{accumulator::Accumulator, config::Configuration, pointcloud::PointCloud};
+use mmwave::core::{
+    accumulator::Accumulator,
+    config::Configuration,
+    pointcloud::{IntoPointCloud, PointCloud, PointCloudLike},
+};
 use std::{
     fs::{File, OpenOptions},
     io::{BufReader, Write},
     net::SocketAddr,
     sync::Arc,
 };
+use tokio::select;
 use tokio::sync::{
     mpsc::{self, Receiver as MpscReceiver, Sender as MpscSender},
     watch::{self, Receiver as WatchReceiver, Sender as WatchSender},
@@ -80,6 +85,7 @@ async fn handle_accumulator(
                 }
             },
             Some(pointcloud) = accumulator.peek() => {
+                dbg!(&pointcloud);
                 watch_tx.send(pointcloud);
             }
         }
@@ -105,9 +111,14 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     // Recieve on the socket and forward that to the accumulator
     let mut t1 = tokio::spawn(async move {
         while let Some(Ok(Message::Text(message))) = socket_rx.next().await {
-            let Ok(message) = serde_json::from_str::<PointCloud>(&message) else {
-                continue;
+            let message = match serde_json::from_str::<PointCloudLike>(&message) {
+                Ok(message) => message,
+                Err(e) => {
+                    eprintln!("Error parsing pointcloud message, {:?}", e);
+                    continue;
+                }
             };
+            let message = message.into_point_cloud();
             // Forward the message onto the pointcloud handler
             let result = tx.send(message).await;
             if result.is_err() {
@@ -157,9 +168,14 @@ async fn get_config_handler(State(state): State<Arc<AppState>>) -> impl IntoResp
 }
 
 async fn set_config_handler(State(state): State<Arc<AppState>>, message: String) {
-    let Ok(config) = serde_json::from_str::<Configuration>(&message) else {
-        return;
+    println!("Receiving config set request");
+    let config = match serde_json::from_str::<Configuration>(&message) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Unable to parse incoming config with error: {:?}", e);
+            return;
+        }
     };
-
+    println!("New config set with contents: {:?}", &config);
     *state.config.lock().await = config;
 }

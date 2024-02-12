@@ -63,7 +63,7 @@ impl Playback {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Hash, Clone, Eq, PartialEq, Serialize, Deserialize, Default)]
 pub struct PlaybackDescriptor {
     pub path: String,
 }
@@ -80,7 +80,7 @@ impl Sensor for Playback {
             Some(thing) => Ok(pointcloud::PointCloudLike::PointCloud(
                 thing.into_point_cloud(),
             )),
-            None => Err(SensorReadError::Failed),
+            None => Err(SensorReadError::Critical),
         }
     }
 }

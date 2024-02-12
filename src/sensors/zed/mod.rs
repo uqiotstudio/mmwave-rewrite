@@ -2,7 +2,7 @@ extern crate libc;
 
 use serde::{Deserialize, Serialize};
 
-use libc::{size_t};
+use libc::size_t;
 use std::{
     os::raw::c_float,
     time::{SystemTime, UNIX_EPOCH},
@@ -129,7 +129,7 @@ impl Drop for Zed {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Hash, Clone, Eq, PartialEq, Serialize, Deserialize, Default)]
 pub struct ZedDescriptor {}
 
 impl ZedDescriptor {
@@ -176,6 +176,6 @@ impl Sensor for Zed {
     fn try_read(&mut self) -> Result<PointCloudLike, SensorReadError> {
         self.try_read()
             .map(|m| PointCloudLike::ZedCameraFrame(m))
-            .ok_or(SensorReadError::Failed)
+            .ok_or(SensorReadError::Benign)
     }
 }
