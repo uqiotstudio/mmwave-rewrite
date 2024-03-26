@@ -14,10 +14,16 @@ use mmwave::core::{
     config::Configuration,
     pointcloud::{IntoPointCloud, PointCloud, PointCloudLike},
 };
+use searchlight::{
+    broadcast::{BroadcasterBuilder, ServiceBuilder},
+    discovery::{DiscoveryBuilder, DiscoveryEvent},
+    net::IpVersion,
+};
 use std::{
     fs::{File, OpenOptions},
     io::{BufReader, Write},
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    str::FromStr,
     sync::Arc,
 };
 use tokio::select;
@@ -26,6 +32,8 @@ use tokio::sync::{
     watch::{self, Receiver as WatchReceiver, Sender as WatchSender},
     Mutex,
 };
+
+const PORT: u16 = 3000;
 
 struct AppState {
     config: Arc<Mutex<Configuration>>,
@@ -52,6 +60,27 @@ async fn main() {
     let accumulator = Accumulator::new(1000);
     tokio::task::spawn(handle_accumulator(accumulator, mpsc_rx, watch_tx));
 
+    // Broadcast a mdns service
+    tokio::task::spawn(async {
+        let broadcaster = BroadcasterBuilder::new()
+            .loopback()
+            .add_service(
+                ServiceBuilder::new("_http._tcp.local", "mmwaveserver", PORT)
+                    .unwrap()
+                    .add_ip_address(IpAddr::V4(Ipv4Addr::LOCALHOST))
+                    .add_ip_address(IpAddr::V6(Ipv6Addr::LOCALHOST))
+                    .build()
+                    .unwrap(),
+            )
+            .build(searchlight::net::IpVersion::Both)
+            .unwrap()
+            .run_in_background();
+
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1));
+        }
+    });
+
     // Set up the axum router
     let app = Router::new()
         .route("/ws", get(websocket_handler))
@@ -59,8 +88,12 @@ async fn main() {
         .route("/set_config", post(set_config_handler))
         .with_state(app_state);
 
-    // Listen on port 3000
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    // Listen on port PORT
+    // let addr = format!(":::{}", PORT)
+    // .parse::<std::net::SocketAddr>()
+    // .unwrap();
+    let addr = &SocketAddr::new(IpAddr::from(Ipv6Addr::UNSPECIFIED), 3000);
+    // let addr = SocketAddr::from(([0, 0, 0, 0], PORT));
     println!("Listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
