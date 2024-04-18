@@ -11,7 +11,15 @@ use mmwave::core::{
     config::Configuration,
     message::{Destination, Message},
 };
-use tokio::sync::{mpsc, Mutex};
+use searchlight::broadcast::{BroadcasterBuilder, ServiceBuilder};
+
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use tokio::sync::{
+    mpsc::{self},
+    Mutex,
+};
+
+const PORT: u16 = 3000;
 
 #[derive(Clone)]
 struct AppState {
@@ -38,13 +46,39 @@ async fn main() {
     // Spawn the relay task
     let mut relay = tokio::task::spawn(async move { relay(relay_rx) });
 
+    // Broadcast a mdns service
+    tokio::task::spawn(async {
+        let broadcaster = BroadcasterBuilder::new()
+            .loopback()
+            .add_service(
+                ServiceBuilder::new("_http._tcp.local", "mmwaveserver", PORT)
+                    .unwrap()
+                    .add_ip_address(IpAddr::V4(Ipv4Addr::LOCALHOST))
+                    .add_ip_address(IpAddr::V6(Ipv6Addr::LOCALHOST))
+                    .build()
+                    .unwrap(),
+            )
+            .build(searchlight::net::IpVersion::Both)
+            .unwrap()
+            .run_in_background();
+
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1));
+        }
+    });
+
     // Set up the axum router
     let app = Router::new()
         .route("/ws", get(websocket_handler))
         .with_state(Arc::new(app_state));
 
-    // Listen on port 3000
-    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 3000));
+    // Listen on port PORT
+    // let addr = format!(":::{}", PORT)
+    // .parse::<std::net::SocketAddr>()
+    // .unwrap();
+    let addr = &SocketAddr::new(IpAddr::from(Ipv6Addr::UNSPECIFIED), 3000);
+    // let addr = SocketAddr::from(([0, 0, 0, 0], PORT));
+
     println!("Listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
