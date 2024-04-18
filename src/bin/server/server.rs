@@ -1,66 +1,50 @@
+use std::{collections::HashMap, sync::Arc};
+
 use axum::{
-    extract::{
-        ws::{Message, WebSocket},
-        State, WebSocketUpgrade,
-    },
-    http::StatusCode,
+    extract::{ws::WebSocket, State, WebSocketUpgrade},
     response::IntoResponse,
-    routing::{get, post},
+    routing::get,
     Router,
 };
 use futures_util::{SinkExt, StreamExt};
 use mmwave::core::{
-    accumulator::Accumulator,
     config::Configuration,
-    pointcloud::{IntoPointCloud, PointCloud, PointCloudLike},
+    message::{Destination, Message},
 };
-use std::{
-    fs::{File, OpenOptions},
-    io::{BufReader, Write},
-    net::SocketAddr,
-    sync::Arc,
-};
-use tokio::select;
-use tokio::sync::{
-    mpsc::{self, Receiver as MpscReceiver, Sender as MpscSender},
-    watch::{self, Receiver as WatchReceiver, Sender as WatchSender},
-    Mutex,
-};
+use tokio::sync::{mpsc, Mutex};
 
+#[derive(Clone)]
 struct AppState {
-    config: Arc<Mutex<Configuration>>,
-    tx: MpscSender<PointCloud>,
-    rx: WatchReceiver<PointCloud>,
+    relay_tx: mpsc::Sender<MessageWrapper>,
+}
+
+#[derive(Clone)]
+struct ServerState {
+    config: Configuration,
+    destinations: HashMap<Destination, Vec<mpsc::Sender<Message>>>,
+}
+
+#[derive(Clone)]
+struct MessageWrapper {
+    message: Message,
+    sender_tx: Option<mpsc::Sender<Message>>,
 }
 
 #[tokio::main]
 async fn main() {
-    // Config is set up properly by a user, in the dashboard
-    let config = Arc::new(Mutex::new(Configuration::default()));
+    let (relay_tx, relay_rx) = mpsc::channel(100);
+    let mut app_state = AppState { relay_tx };
 
-    let (mpsc_tx, mpsc_rx) = mpsc::channel::<PointCloud>(100);
-    let (watch_tx, watch_rx) = watch::channel::<PointCloud>(PointCloud::default());
-
-    // Initialize the app state
-    let app_state = Arc::new(AppState {
-        config,
-        tx: mpsc_tx,
-        rx: watch_rx,
-    });
-
-    // Spawn a task to start handling the accumulator
-    let accumulator = Accumulator::new(1000);
-    tokio::task::spawn(handle_accumulator(accumulator, mpsc_rx, watch_tx));
+    // Spawn the relay task
+    let mut relay = tokio::task::spawn(async move { relay(relay_rx) });
 
     // Set up the axum router
     let app = Router::new()
         .route("/ws", get(websocket_handler))
-        .route("/get_config", get(get_config_handler))
-        .route("/set_config", post(set_config_handler))
-        .with_state(app_state);
+        .with_state(Arc::new(app_state));
 
     // Listen on port 3000
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 3000));
     println!("Listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
@@ -68,27 +52,68 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn handle_accumulator(
-    mut accumulator: Accumulator,
-    mut mpsc_rx: MpscReceiver<PointCloud>,
-    watch_tx: WatchSender<PointCloud>,
-) {
-    loop {
-        tokio::select! {
-            recieved = mpsc_rx.recv() => {
-                if let Some(point_cloud) = recieved {
-                    accumulator.push(point_cloud);
-                    accumulator.reorganize();
-                } else {
-                    eprintln!("Accumulator Stopped");
-                    return;
+async fn relay(mut relay_rx: mpsc::Receiver<MessageWrapper>) {
+    // establish the config held by this relay
+    let config = Configuration::default();
+
+    // establish the mapping of destinations to sockets
+    let destinations = HashMap::<Destination, Vec<mpsc::Sender<Message>>>::new();
+
+    let server_state = Arc::new(Mutex::new(ServerState {
+        config,
+        destinations,
+    }));
+
+    async fn handle_server_message(
+        MessageWrapper { message, sender_tx }: MessageWrapper,
+        server_state: Arc<Mutex<ServerState>>,
+    ) {
+        match message.content {
+            mmwave::core::message::MessageContent::DataMessage(_) => todo!(),
+            mmwave::core::message::MessageContent::ConfigMessage(_) => todo!(),
+            mmwave::core::message::MessageContent::ConfigRequest(_) => todo!(),
+            // Register a destination to the destination map
+            mmwave::core::message::MessageContent::EstablishDestination(destination) => {
+                if let Some(sender_tx) = sender_tx {
+                    server_state
+                        .lock()
+                        .await
+                        .destinations
+                        .entry(destination)
+                        .or_insert(Vec::new())
+                        .push(sender_tx)
                 }
-            },
-            Some(pointcloud) = accumulator.peek() => {
-                dbg!(&pointcloud);
-                watch_tx.send(pointcloud);
             }
-        }
+        };
+    }
+
+    // Receive messages from relay_rx and forward them to destinations
+    // if the destination is server, handle the message here!
+    while let Some(MessageWrapper { message, sender_tx }) = relay_rx.recv().await {
+        match message.destination.clone() {
+            // Rewrap the message and forward it to the relay handler
+            Destination::Server => {
+                tokio::task::spawn(handle_server_message(
+                    MessageWrapper { message, sender_tx },
+                    server_state.clone(),
+                ));
+            }
+            // Otherwise, forward the message to all appropriate destinations
+            other => {
+                for tx in server_state
+                    .lock()
+                    .await
+                    .destinations
+                    .entry(other)
+                    .or_insert(Vec::new())
+                    .iter()
+                {
+                    if let Err(e) = tx.send(message.clone()).await {
+                        eprintln!("Unable to send message to socket handler, {:?}", e);
+                    }
+                }
+            }
+        };
     }
 }
 
@@ -101,51 +126,57 @@ async fn websocket_handler(
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
+/// Handles the provided websocket
 async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
-    let tx = state.tx.clone();
-    let mut rx = state.rx.clone();
+    // lets us forward messages to the relay
+    let relay_tx = state.relay_tx.clone();
+
+    // let us receive messages from the relay
+    let (sender_tx, mut sender_rx) = mpsc::channel(100);
+
+    // break the socket in half
     let (mut socket_tx, mut socket_rx) = socket.split();
 
-    // We are effectively just creating two processes which connect the channels up with those used in the accumulator handler.
-
-    // Recieve on the socket and forward that to the accumulator
-    let mut t1 = tokio::spawn(async move {
-        while let Some(Ok(Message::Text(message))) = socket_rx.next().await {
-            let message = match serde_json::from_str::<PointCloudLike>(&message) {
+    // listen for + deserialize messages on the socket and forward them to relay
+    let mut t1 = tokio::task::spawn(async move {
+        while let Some(Ok(axum::extract::ws::Message::Text(message))) = socket_rx.next().await {
+            let message = match serde_json::from_str::<Message>(&message) {
                 Ok(message) => message,
                 Err(e) => {
-                    eprintln!("Error parsing pointcloud message, {:?}", e);
+                    eprintln!("Error parsing message, {:?}", e);
                     continue;
                 }
             };
-            let message = message.into_point_cloud();
-            // Forward the message onto the pointcloud handler
-            let result = tx.send(message).await;
-            if result.is_err() {
-                eprintln!("Error sending pointcloud to accumulator: {:#?}", result);
-                dbg!(result.err().unwrap().to_string());
-                break;
-            }
+
+            let message_wrapped = MessageWrapper {
+                message,
+                sender_tx: Some(sender_tx.clone()),
+            };
+
+            // forward the message onto the relay
+            relay_tx
+                .send(message_wrapped)
+                .await
+                .expect("failed to forward message to relay");
         }
     });
 
-    // Receive the top frame from the accumulator each 100ms and forward it
-    let mut t2 = tokio::spawn(async move {
-        loop {
-            let pointcloud = rx.borrow_and_update().clone();
-            if let Err(e) = socket_tx
-                .send(Message::Text(
-                    serde_json::to_string(&pointcloud).unwrap_or("".to_owned()),
-                ))
-                .await
-            {
-                eprintln!("Error receiving pointcloud from accumulator: {:#?}", e);
-                break;
-            }
-            if let Err(e) = rx.changed().await {
-                eprintln!("Error receiving pointcloud from accumulator: {:#?}", e);
-                break;
-            }
+    // Receive messages sent to any destinations this socket is registered to
+    // and forward the messages onto the client
+    let mut t2 = tokio::task::spawn(async move {
+        while let Some(message) = sender_rx.recv().await {
+            let message = serde_json::to_string(&message);
+            match message {
+                Ok(message) => {
+                    socket_tx
+                        .send(axum::extract::ws::Message::Text(message))
+                        .await
+                        .expect("Socket is closed or broken");
+                }
+                Err(e) => {
+                    eprintln!("Failed to send message with error {:?}", e);
+                }
+            };
         }
     });
 
@@ -155,27 +186,4 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     };
 
     eprintln!("Socket Handler Stopped");
-}
-
-async fn get_config_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    match serde_json::to_string(&state.config.lock().await.clone()) {
-        Ok(json) => (StatusCode::OK, json),
-        Err(_) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to serialize config".into(),
-        ),
-    }
-}
-
-async fn set_config_handler(State(state): State<Arc<AppState>>, message: String) {
-    println!("Receiving config set request");
-    let config = match serde_json::from_str::<Configuration>(&message) {
-        Ok(config) => config,
-        Err(e) => {
-            eprintln!("Unable to parse incoming config with error: {:?}", e);
-            return;
-        }
-    };
-    println!("New config set with contents: {:?}", &config);
-    *state.config.lock().await = config;
 }
