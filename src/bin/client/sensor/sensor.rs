@@ -2,6 +2,7 @@ use futures_util::{pin_mut, SinkExt, StreamExt, TryFutureExt};
 use mmwave::{
     core::{
         config::Configuration,
+        message::MachineId,
         pointcloud::{IntoPointCloud, PointCloudLike},
         transform::Transform,
     },
@@ -37,7 +38,7 @@ struct SensorClient {
 
 struct AppState {
     server_address: ServerAddress,
-    machine_id: usize,
+    machine_id: MachineId,
     sensors: HashMap<SensorDescriptor, SensorClient>,
     pointcloud_sender: mpsc::Sender<PointCloudLike>,
 }
@@ -170,12 +171,13 @@ async fn main() {
 
     let server_address = ServerAddress::new().await;
 
-    let machine_id: usize = args
-        .get(3)
-        .cloned()
-        .unwrap_or("0".to_owned())
-        .parse()
-        .expect("Requires Positive Integer for machine_id");
+    let machine_id = MachineId(
+        args.get(3)
+            .cloned()
+            .unwrap_or("0".to_owned())
+            .parse()
+            .expect("Requires Positive Integer for machine_id"),
+    );
 
     dbg!(server_address.address());
     println!("{}", server_address.address());
@@ -319,7 +321,7 @@ async fn config_maintainer(
                 desc.clone(),
                 SensorClient {
                     descriptor: SensorConfig {
-                        machine_id: machine_id,
+                        machine_id: machine_id.clone(),
                         sensor_descriptor: desc.clone(),
                         transform: trans.clone(),
                     },

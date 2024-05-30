@@ -21,7 +21,7 @@ pub enum Destination {
 }
 
 #[derive(Hash, Eq, PartialEq, Serialize, Deserialize, Debug, Clone)]
-pub struct MachineId(usize);
+pub struct MachineId(pub usize);
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MessageContent {
