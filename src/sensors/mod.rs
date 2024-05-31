@@ -6,8 +6,9 @@ use std::hash::Hash;
 
 use serde::{Deserialize, Serialize};
 
+use crate::core::data::Data;
 use crate::core::message::MachineId;
-use crate::core::{pointcloud::PointCloudLike, transform::Transform};
+use crate::core::transform::Transform;
 
 use self::awr::error::{RadarInitError, RadarReadError};
 use self::awr::AwrDescriptor;
@@ -15,7 +16,7 @@ use self::playback::PlaybackDescriptor;
 use self::zed::ZedDescriptor;
 
 pub trait Sensor: Send {
-    fn try_read(&mut self) -> Result<PointCloudLike, SensorReadError>;
+    fn try_read(&mut self) -> Result<Data, SensorReadError>;
 }
 
 #[derive(PartialEq, Serialize, Deserialize, Debug, Clone)]

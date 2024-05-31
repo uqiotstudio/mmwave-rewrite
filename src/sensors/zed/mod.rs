@@ -9,7 +9,7 @@ use std::{
 };
 
 #[repr(C)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Point3D {
     pub x: c_float,
     pub y: c_float,
@@ -63,16 +63,17 @@ mod zed_camera_support {
 // Re-export the functions so they can be used directly under the module's namespace.
 pub use zed_camera_support::*;
 
-use crate::core::pointcloud::{IntoPointCloud, PointCloud, PointCloudLike, PointMetaData};
+use crate::core::data::Data;
+use crate::core::pointcloud::{IntoPointCloud, PointCloud, PointMetaData};
 
 use super::{Sensor, SensorInitError, SensorReadError};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ZedMessage {
     pub bodies: Vec<BodyInfo>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BodyInfo {
     pub keypoints: Vec<Point3D>,
 }
@@ -173,9 +174,9 @@ impl IntoPointCloud for ZedMessage {
 }
 
 impl Sensor for Zed {
-    fn try_read(&mut self) -> Result<PointCloudLike, SensorReadError> {
+    fn try_read(&mut self) -> Result<Data, SensorReadError> {
         self.try_read()
-            .map(|m| PointCloudLike::ZedCameraFrame(m))
+            .map(|m| Data::ZedCameraFrame(m))
             .ok_or(SensorReadError::Benign)
     }
 }

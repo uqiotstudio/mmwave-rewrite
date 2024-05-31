@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::time;
 
-use crate::core::pointcloud::{self, IntoPointCloud, PointCloud, PointCloudLike};
+use crate::core::{
+    data::Data,
+    pointcloud::{self, IntoPointCloud, PointCloud},
+};
 
 use super::{Sensor, SensorInitError, SensorReadError};
 
@@ -75,11 +78,9 @@ impl PlaybackDescriptor {
 }
 
 impl Sensor for Playback {
-    fn try_read(&mut self) -> Result<PointCloudLike, SensorReadError> {
+    fn try_read(&mut self) -> Result<Data, SensorReadError> {
         match self.try_read() {
-            Some(thing) => Ok(pointcloud::PointCloudLike::PointCloud(
-                thing.into_point_cloud(),
-            )),
+            Some(thing) => Ok(Data::PointCloud(thing.into_point_cloud())),
             None => Err(SensorReadError::Critical),
         }
     }

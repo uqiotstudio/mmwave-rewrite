@@ -6,18 +6,17 @@ use tokio::{
 };
 
 use crate::{
-    core::config::Configuration,
-    core::pointcloud::{IntoPointCloud, PointCloudLike},
+    core::{config::Configuration, pointcloud::IntoPointCloud},
     sensors::{Sensor, SensorConfig},
 };
 
-use super::message::MachineId;
+use super::{data::Data, message::MachineId};
 
 pub struct Manager {
     machine_id: MachineId,
     config: Configuration,
-    pointcloud_sender: mpsc::Sender<PointCloudLike>,
-    pointcloud_receiver: mpsc::Receiver<PointCloudLike>,
+    pointcloud_sender: mpsc::Sender<Data>,
+    pointcloud_receiver: mpsc::Receiver<Data>,
     read_window: u64,
     kill_sender: watch::Sender<bool>,
     kill_receiver: watch::Receiver<bool>,
@@ -95,7 +94,7 @@ impl Manager {
         }
     }
 
-    pub async fn receive(&mut self) -> Vec<PointCloudLike> {
+    pub async fn receive(&mut self) -> Vec<Data> {
         // // Receives a frame from each receiver, with a timeout window for all radars to send before they are abandoned.
         let mut point_clouds = Vec::new();
         let deadline = time::Instant::now() + Duration::from_millis(self.read_window);
@@ -117,7 +116,7 @@ impl Manager {
 async fn radar_loop(
     mut provider: Box<dyn Sensor>,
     kill_receiver: watch::Receiver<bool>,
-    sender: mpsc::Sender<PointCloudLike>,
+    sender: mpsc::Sender<Data>,
     descriptor: SensorConfig,
 ) {
     while !*kill_receiver.borrow() {
@@ -133,7 +132,7 @@ async fn radar_loop(
                         [p2[0], p2[1], p2[2], p[3]]
                     })
                     .collect();
-                match sender.send(PointCloudLike::PointCloud(frame)).await {
+                match sender.send(Data::PointCloud(frame)).await {
                     Ok(_) => {}
                     Err(_) => {
                         eprintln!("Error sending frame to manager, disconnecting");

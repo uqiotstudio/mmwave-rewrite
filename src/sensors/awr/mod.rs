@@ -10,9 +10,9 @@ use self::message::TlvBody;
 use super::Sensor;
 use super::SensorInitError;
 use super::SensorReadError;
+use crate::core::data::Data;
 use crate::core::pointcloud::IntoPointCloud;
 use crate::core::pointcloud::PointCloud;
-use crate::core::pointcloud::PointCloudLike;
 use crate::core::pointcloud::PointMetaData;
 use serde::Deserialize;
 use serde::Deserializer;
@@ -189,13 +189,13 @@ impl IntoPointCloud for Frame {
 }
 
 impl Sensor for Awr {
-    fn try_read(&mut self) -> Result<PointCloudLike, SensorReadError> {
+    fn try_read(&mut self) -> Result<Data, SensorReadError> {
         match self.read_frame() {
-            Ok(frame) => Ok(PointCloudLike::AWRFrame(frame)),
+            Ok(frame) => Ok(Data::AWRFrame(frame)),
             Err(RadarReadError::ParseError(e)) => {
                 eprintln!("Parse error reading frame, {:?}", e);
                 // A parse error isnt serious enough to warrant a restart, so just let us continue with no points for a frame
-                Ok(PointCloudLike::PointCloud(PointCloud::default()))
+                Ok(Data::PointCloud(PointCloud::default()))
             }
             // Any other errors should never happen and will require reinitialization
             Err(e) => Err(e.into()),

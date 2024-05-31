@@ -1,26 +1,18 @@
+use super::data::Data;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-
-use crate::sensors::awr::message;
-use crate::sensors::zed;
 
 pub trait IntoPointCloud: Serialize + DeserializeOwned {
     fn into_point_cloud(self) -> PointCloud;
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub enum PointCloudLike {
-    PointCloud(PointCloud),
-    AWRFrame(message::Frame),
-    ZedCameraFrame(zed::ZedMessage),
-}
-
-impl IntoPointCloud for PointCloudLike {
+/// Any data can be converted into a pointcloud, for visualisation purposes mostly
+impl IntoPointCloud for Data {
     fn into_point_cloud(self) -> PointCloud {
         match self {
-            PointCloudLike::PointCloud(pc) => pc.into_point_cloud(),
-            PointCloudLike::AWRFrame(pc) => pc.into_point_cloud(),
-            PointCloudLike::ZedCameraFrame(pc) => pc.into_point_cloud(),
+            Data::PointCloud(pc) => pc.into_point_cloud(),
+            Data::AWRFrame(pc) => pc.into_point_cloud(),
+            Data::ZedCameraFrame(pc) => pc.into_point_cloud(),
         }
     }
 }

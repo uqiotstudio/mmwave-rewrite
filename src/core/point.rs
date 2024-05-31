@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Point {
-    x: u64,
-    y: u64,
-    z: u64,
-    v: u64,
+    pub(crate) x: u64,
+    pub y: u64,
+    pub z: u64,
+    pub v: u64,
 }

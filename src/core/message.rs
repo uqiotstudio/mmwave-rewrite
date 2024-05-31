@@ -1,8 +1,7 @@
+use super::{config::Configuration, data::Data};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{num::ParseIntError, str::FromStr};
-
-use super::{config::Configuration, data::Data};
 
 #[derive(Serialize, Deserialize, Debug, Hash, Clone, Eq, PartialEq)]
 pub enum Destination {
@@ -20,13 +19,13 @@ pub enum Destination {
     Writer,
 }
 
-#[derive(Hash, Eq, PartialEq, Serialize, Deserialize, Debug, Clone)]
+#[derive(Hash, Eq, PartialEq, Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct MachineId(pub usize);
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MessageContent {
     /// A message containing data
-    DataMessage(Box<dyn Data>),
+    DataMessage(Data),
     /// A message containing a config
     ConfigMessage(Configuration),
     /// Requests the config be sent to the provided destination

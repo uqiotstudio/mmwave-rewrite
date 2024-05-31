@@ -1,13 +1,10 @@
-use super::point::Point;
-use dyn_clone::DynClone;
+use super::pointcloud::PointCloud;
+use crate::sensors::{awr::message, zed};
+use serde::{Deserialize, Serialize};
 
-pub trait Timestamp {
-    type Time;
-    fn get_timestamp(&self) -> Self::Time;
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum Data {
+    AWRFrame(message::Frame),
+    PointCloud(PointCloud),
+    ZedCameraFrame(zed::ZedMessage),
 }
-
-#[typetag::serde(tag = "DataType")]
-pub trait Data: std::fmt::Debug + Send + Sync + DynClone {
-    fn into_points(&self) -> Vec<Point>;
-}
-dyn_clone::clone_trait_object!(Data);

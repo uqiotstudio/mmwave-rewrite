@@ -35,11 +35,11 @@ impl ServerAddress {
         Self { address, is_fixed }
     }
 
+    #[instrument]
     pub async fn refresh(&mut self) {
         if self.is_fixed {
-            println!("Address is fixed, no action taken.");
+            warn!("Address is fixed, no action taken.");
         } else {
-            println!("Attempting to locate a service on the local network.");
             self.address = discover_service().await;
         };
         dbg!(self.address);
@@ -51,14 +51,6 @@ impl ServerAddress {
 
     pub fn url(&self) -> Url {
         Url::parse(&format!("http://{}", self.address())).expect("Unable to parse url")
-    }
-
-    pub fn url_get_config(&self) -> Url {
-        Url::parse(&format!("{}get_config", self.url())).expect("Unable to parse get_config url")
-    }
-
-    pub fn url_set_config(&self) -> Url {
-        Url::parse(&format!("{}set_config", self.url())).expect("Unable to parse sent_config url")
     }
 
     pub fn url_ws(&self) -> Url {

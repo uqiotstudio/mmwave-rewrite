@@ -2,31 +2,29 @@ mod address;
 mod args;
 
 use clap::Parser;
-use futures_util::{pin_mut, SinkExt, StreamExt, TryFutureExt};
+use futures_util::{SinkExt, StreamExt};
 use mmwave::{
     core::{
         config::Configuration,
-        message::MachineId,
-        pointcloud::{IntoPointCloud, PointCloudLike},
+        data::Data,
+        message::{self, MachineId, Message},
+        pointcloud::{IntoPointCloud, PointCloud},
         transform::Transform,
     },
     sensors::{SensorConfig, SensorDescriptor},
 };
-use rand::{thread_rng, Rng};
 use reqwest::Url;
-use serde_json::{self, from_str};
+use serde_json::{self};
 use std::{
     collections::{HashMap, HashSet},
     ops::{AddAssign, MulAssign},
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio::{select, sync::oneshot::Receiver};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
-use tracing::{
-    error, info, info_span, instrument, level_filters::LevelFilter, span, trace, warn, Level,
-};
+use tokio_tungstenite::connect_async;
+use tracing::{error, info, instrument, level_filters::LevelFilter, warn};
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -41,8 +39,6 @@ struct SensorClient {
 struct AppState {
     server_address: ServerAddress,
     machine_id: MachineId,
-    sensors: HashMap<SensorDescriptor, SensorClient>,
-    pointcloud_sender: mpsc::Sender<PointCloudLike>,
 }
 
 #[tokio::main]
@@ -68,153 +64,251 @@ async fn main() {
 
     info!(ip = ?server_address.address(), url = %server_address.url(), "server_address");
 
-    let sensors = HashMap::<SensorDescriptor, SensorClient>::new();
-
-    let (mpsc_tx, mpsc_rx) = mpsc::channel::<PointCloudLike>(100);
-
     let app_state = AppState {
         server_address: server_address.clone(),
         machine_id,
-        sensors,
-        pointcloud_sender: mpsc_tx,
     };
 
-    // Periodically check for config updates
-    // Filter out sensors with different machine id. Of those that remain:
-    // - If a sensor is no longer listed, kill it
-    // - If a sensor is added, spawn it
-    // - If a sensors descriptor (not transform) is changed, reboot it
-    let mut maintenance_task = tokio::task::spawn(config_maintainer(app_state));
-    let mut forwarding_task =
-        tokio::task::spawn(pointcloud_forwarding(mpsc_rx, server_address.url_ws()));
-
-    // This should go on forever!
-    select! {
-        _ = &mut maintenance_task => {
-            eprintln!("config maintainer failed");
-            forwarding_task.abort();
-        }
-        _ = &mut forwarding_task => {
-            eprintln!("Forwarding task failed");
-            maintenance_task.abort();
-        }
-    };
+    // This should never end, ideally
+    relay(app_state).await;
 }
 
 #[instrument(skip_all, fields(address=%server_address.address(), machine=%machine_id.0))]
-async fn config_maintainer(
+async fn relay(
     AppState {
         mut server_address,
         machine_id,
-        mut sensors,
-        mut pointcloud_sender,
     }: AppState,
 ) {
-    let mut interval = tokio::time::interval(Duration::from_millis(1000));
+    let (inbound_tx, inbound_rx) = mpsc::channel::<Message>(100);
+    let (outbound_tx, _) = broadcast::channel::<Message>(100);
+    let (pointcloud_tx, pointcloud_rx) = mpsc::channel::<Data>(100);
 
+    // Spawn the producer and inbound_handler
+    tokio::task::spawn(inbound_handler(
+        AppState {
+            server_address,
+            machine_id,
+        },
+        inbound_rx,
+        pointcloud_tx,
+    ));
+    tokio::task::spawn(producer(
+        AppState {
+            server_address,
+            machine_id,
+        },
+        outbound_tx.clone(),
+        pointcloud_rx,
+    ));
+
+    // 250ms polling rate
+    let mut interval = tokio::time::interval(Duration::from_millis(250));
     loop {
         interval.tick().await;
 
-        // Get a response from the url
-        let Ok(resp) = reqwest::get(server_address.url_get_config()).await else {
-            eprintln!("Unable to send get request, is the server not running?");
-            server_address.refresh().await;
-            continue;
-        };
+        // Refresh the address if it is dynamic
+        server_address.refresh();
 
-        // Convert it into text
-        let Ok(text) = resp.text().await else {
-            continue;
-        };
-
-        // Parse a config
-        let Ok(mut updated_config) = serde_json::from_str::<Configuration>(&text) else {
-            error!("Unable to parse config");
-            continue;
-        };
-
-        // We have a valid configuration. Filter it by our machine id
-        updated_config
-            .descriptors
-            .retain(|cfg| cfg.machine_id == machine_id);
-
-        let updated_sensors = updated_config.descriptors;
-        let (mut updated_sensors_desc, mut updated_sensors_trans): (Vec<_>, Vec<_>) =
-            updated_sensors
-                .into_iter()
-                .map(|sensor| (sensor.sensor_descriptor, sensor.transform))
-                .unzip();
-
-        // Anything in this set is flagged for removal at the end of loop
-        // Because we index by a sensor descriptors hash, any changes to its internals will cause it to appear as a new device, thus keeping it in the removal flags *and* spawning up a new instance. This works well enough for reloading. As such, we only need to update the surroudning data. Because machine_id is filtered out already, it has the same effect as the hash. The only other remaining element to update without causing a removal is the transform.
-        let mut removal_flags: HashSet<SensorDescriptor> = sensors.keys().cloned().collect();
-
-        let mut changelog = Vec::new();
-
-        // Here we remove any sensors that have the same hash from the removal set (mark them to be kept).
-        // In addition, for sensors that are being kept, we update their transformation.
-        // While doing this we remove any sensors from the updated_sensors list too, so that at the end we may iterate that list to spawn the new sensors.
-        // All of this logic kind of depends on hash being the same as eq for the sensordescriptor
-        for desc in sensors.keys().cloned().collect::<Vec<_>>() {
-            if let Some(index) = updated_sensors_desc.iter().position(|n| *n == desc) {
-                changelog.push(desc.title());
-                removal_flags.remove(&desc);
-
-                // Update the transform to match the new version
-                let sensor_client = sensors
-                    .get_mut(&desc)
-                    .expect("This is an unreachable error");
-                sensor_client.descriptor.transform = updated_sensors_trans[index].clone();
-
-                // We saw this, so it is NOT new, remove it from the list of spawns
-                updated_sensors_desc.swap_remove(index);
-                updated_sensors_trans.swap_remove(index);
-            }
-        }
-
-        println!("Config Maintenance Report:");
-        for title in changelog {
-            println!("\tMaintaining {}", title);
-        }
-        for desc in &removal_flags {
-            println!("\tKilling {}", desc.title());
-        }
-        for desc in &updated_sensors_desc {
-            println!("\tSpawning {}", desc.title());
-        }
-
-        // Kill any sensors that were removed or changed:
-        for key in removal_flags {
-            if let Some(sensorclient) = sensors.remove(&key) {
-                println!(
-                    "Killed sensorclient {:?} with result: {:?}",
-                    sensorclient.descriptor.title(),
-                    sensorclient.kill_signal.send(())
+        // Connect the WS
+        let (mut ws_tx, mut ws_rx) = match connect_async(server_address.url_ws()).await {
+            Ok((stream, _)) => stream,
+            Err(e) => {
+                error!(
+                    "Failed to connect to WebSocket with request \"{}\". Error was: {:?}",
+                    server_address.url_ws(),
+                    e
                 );
+                continue;
             }
         }
+        .split();
 
-        // Spawn any sensors that were changed or new
-        for (desc, trans) in updated_sensors_desc.iter().zip(updated_sensors_trans) {
-            let (tx, rx) = oneshot::channel();
-            tokio::task::spawn(maintainer(
-                desc.clone(),
-                trans.clone(),
-                rx,
-                pointcloud_sender.clone(),
-            ));
-            sensors.insert(
-                desc.clone(),
-                SensorClient {
-                    descriptor: SensorConfig {
-                        machine_id: machine_id.clone(),
-                        sensor_descriptor: desc.clone(),
-                        transform: trans.clone(),
+        // Forward incoming signals to the manager
+        let inbound_tx = inbound_tx.clone();
+        let mut inbound_task = tokio::task::spawn(async move {
+            loop {
+                let Some(message) = ws_rx.next().await else {
+                    continue;
+                };
+
+                let Ok(message) = message else {
+                    break;
+                };
+
+                let Ok(message) = serde_json::from_str(&message.to_string()) else {
+                    error!(text = message.to_string(), "Unable to parse message");
+                    break;
+                };
+
+                inbound_tx.send(message).await;
+            }
+        });
+
+        // Forward outgoing signals to the websocket
+        let mut outbound_rx = outbound_tx.subscribe();
+        let mut outbound_task = tokio::task::spawn(async move {
+            loop {
+                let Ok(message) = outbound_rx.recv().await else {
+                    break;
+                };
+
+                let Ok(message) = serde_json::to_string(&message) else {
+                    error!(message = ?message, "Unable to encode message");
+                    break;
+                };
+
+                ws_tx.send(tokio_tungstenite::tungstenite::Message::Text(message));
+            }
+        });
+
+        // This should go until one closes
+        select! {
+            _ = &mut inbound_task => {
+                warn!("Inbound Task Closed");
+                outbound_task.abort();
+            }
+            _ = &mut outbound_task => {
+                warn!("Inbound Task Closed");
+                inbound_task.abort();
+            }
+        }
+    }
+}
+
+#[instrument(skip_all, fields(address=%server_address.address(), machine=%machine_id.0))]
+async fn inbound_handler(
+    AppState {
+        mut server_address,
+        machine_id,
+    }: AppState,
+    mut receiver: tokio::sync::mpsc::Receiver<Message>,
+    mut pointcloud_sender: tokio::sync::mpsc::Sender<Data>,
+) {
+    let mut sensors = HashMap::<SensorDescriptor, SensorClient>::new();
+
+    loop {
+        let Some(message) = receiver.recv().await else {
+            error!("receiver closed");
+            continue;
+        };
+
+        match message.content {
+            message::MessageContent::DataMessage(_) => {
+                error!("Received Unsupported Message");
+            }
+            message::MessageContent::ConfigMessage(mut config) => {
+                info!("Received config message");
+                update_config(
+                    AppState {
+                        server_address,
+                        machine_id,
                     },
-                    kill_signal: tx,
-                },
+                    config,
+                    &mut sensors,
+                    &mut pointcloud_sender,
+                )
+                .await;
+            }
+            message::MessageContent::ConfigRequest(_) => {
+                error!("Received Unsupported Message");
+            }
+            message::MessageContent::EstablishDestination(_) => {
+                error!("Received Unsupported Message");
+            }
+        }
+    }
+}
+
+async fn update_config(
+    AppState {
+        mut server_address,
+        machine_id,
+    }: AppState,
+    mut updated_config: Configuration,
+    sensors: &mut HashMap<SensorDescriptor, SensorClient>,
+    pointcloud_sender: &mut mpsc::Sender<Data>,
+) {
+    // We have a valid configuration. Filter it by our machine id
+    updated_config
+        .descriptors
+        .retain(|cfg| cfg.machine_id == machine_id);
+
+    let updated_sensors = updated_config.descriptors;
+    let (mut updated_sensors_desc, mut updated_sensors_trans): (Vec<_>, Vec<_>) = updated_sensors
+        .into_iter()
+        .map(|sensor| (sensor.sensor_descriptor, sensor.transform))
+        .unzip();
+
+    // Anything in this set is flagged for removal at the end of loop
+    // Because we index by a sensor descriptors hash, any changes to its internals will cause it to appear as a new device, thus keeping it in the removal flags *and* spawning up a new instance. This works well enough for reloading. As such, we only need to update the surroudning data. Because machine_id is filtered out already, it has the same effect as the hash. The only other remaining element to update without causing a removal is the transform.
+    let mut removal_flags: HashSet<SensorDescriptor> = sensors.keys().cloned().collect();
+
+    let mut changelog = Vec::new();
+
+    // Here we remove any sensors that have the same hash from the removal set (mark them to be kept).
+    // In addition, for sensors that are being kept, we update their transformation.
+    // While doing this we remove any sensors from the updated_sensors list too, so that at the end we may iterate that list to spawn the new sensors.
+    // All of this logic kind of depends on hash being the same as eq for the sensordescriptor
+    for desc in sensors.keys().cloned().collect::<Vec<_>>() {
+        if let Some(index) = updated_sensors_desc.iter().position(|n| *n == desc) {
+            changelog.push(desc.title());
+            removal_flags.remove(&desc);
+
+            // Update the transform to match the new version
+            let sensor_client = sensors
+                .get_mut(&desc)
+                .expect("This is an unreachable error");
+            sensor_client.descriptor.transform = updated_sensors_trans[index].clone();
+
+            // We saw this, so it is NOT new, remove it from the list of spawns
+            updated_sensors_desc.swap_remove(index);
+            updated_sensors_trans.swap_remove(index);
+        }
+    }
+
+    info!("Config Maintenance Report:");
+    for title in changelog {
+        info!(descriptor = title, "Maintaining");
+    }
+    for desc in &removal_flags {
+        info!(descriptor = desc.title(), "Killing");
+    }
+    for desc in &updated_sensors_desc {
+        info!(descriptor = desc.title(), "Spawning");
+    }
+
+    // Kill any sensors that were removed or changed:
+    for key in removal_flags {
+        if let Some(sensorclient) = sensors.remove(&key) {
+            info!(
+                "Killed sensorclient {:?} with result: {:?}",
+                sensorclient.descriptor.title(),
+                sensorclient.kill_signal.send(())
             );
         }
+    }
+
+    // Spawn any sensors that were changed or new
+    for (desc, trans) in updated_sensors_desc.iter().zip(updated_sensors_trans) {
+        let (tx, rx) = oneshot::channel();
+        tokio::task::spawn(desc_maintainer(
+            desc.clone(),
+            trans.clone(),
+            rx,
+            pointcloud_sender.clone(),
+        ));
+        sensors.insert(
+            desc.clone(),
+            SensorClient {
+                descriptor: SensorConfig {
+                    machine_id: machine_id.clone(),
+                    sensor_descriptor: desc.clone(),
+                    transform: trans.clone(),
+                },
+                kill_signal: tx,
+            },
+        );
     }
 }
 
@@ -222,11 +316,11 @@ async fn config_maintainer(
 /// - making sure the sensor is running (restarts in event of failure automatically)
 /// - Forwarding the sensor pointcloudlike results back to the client task
 /// - shutting down the client properly in the event of a kill signal
-async fn maintainer(
+async fn desc_maintainer(
     sensor_descriptor: SensorDescriptor,
     transform: Transform,
     mut kill_receiver: Receiver<()>,
-    pointcloud_sender: mpsc::Sender<PointCloudLike>,
+    pointcloud_sender: mpsc::Sender<Data>,
 ) {
     let mut interval = tokio::time::interval(Duration::from_millis(100));
     let mut sensor = None;
@@ -234,39 +328,39 @@ async fn maintainer(
         interval.tick().await;
 
         if kill_receiver.try_recv().is_ok() {
-            println!("Killing Receiver");
+            info!("Killing Receiver");
             return;
         }
 
         // Attempt to connect
         let Some(sensor) = sensor.as_mut() else {
-            println!(
+            info!(
                 "Attempting to initialize sensor {}",
                 sensor_descriptor.title()
             );
             let result = sensor_descriptor.try_initialize();
             if let Err(e) = &result {
-                eprintln!(
+                error!(
                     "Unable to initialize sensor {} with result {:?}",
                     sensor_descriptor.title(),
                     e
                 );
             };
-            println!(
+            info!(
                 "Succesfully initialied sensor {}",
                 sensor_descriptor.title()
             );
             sensor = result.ok();
             continue;
         };
-        println!("Re/Connected to {}", sensor_descriptor.title());
+        info!("Re/Connected to {}", sensor_descriptor.title());
 
-        // We have a mutable reference to the sensor. Attempt to read.
+        // read the sensor and forward
         loop {
             match sensor.try_read() {
-                Ok(pointcloud_like) => {
+                Ok(data) => {
                     // Apply the transformation, and convert into a typical pointcloud
-                    let mut pointcloud = pointcloud_like.into_point_cloud();
+                    let mut pointcloud = data.into_point_cloud();
                     pointcloud.points = pointcloud
                         .points
                         .iter_mut()
@@ -275,15 +369,13 @@ async fn maintainer(
                             [transformed[0], transformed[1], transformed[2], pt[3]]
                         })
                         .collect();
-                    if let Err(e) = pointcloud_sender
-                        .send(PointCloudLike::PointCloud(pointcloud))
-                        .await
-                    {
+                    if let Err(e) = pointcloud_sender.send(Data::PointCloud(pointcloud)).await {
+                        error!("Channel closed");
                         return; // This is unrecoverable
                     }
                 }
                 Err(e) => {
-                    eprintln!(
+                    error!(
                         "Error reading from sensor {:?}: {:?}",
                         sensor_descriptor.title(),
                         e
@@ -303,7 +395,14 @@ async fn maintainer(
 }
 
 #[instrument(skip_all)]
-async fn pointcloud_forwarding(mut mpsc_rx: mpsc::Receiver<PointCloudLike>, ws_url: Url) {
+async fn producer(
+    AppState {
+        mut server_address,
+        machine_id,
+    }: AppState,
+    sender: tokio::sync::broadcast::Sender<Message>,
+    mut pointcloud_receiver: tokio::sync::mpsc::Receiver<Data>,
+) {
     let frame_count = Arc::new(Mutex::new(0));
     let cloned_frame_count = frame_count.clone();
     tokio::task::spawn(async move {
@@ -317,42 +416,22 @@ async fn pointcloud_forwarding(mut mpsc_rx: mpsc::Receiver<PointCloudLike>, ws_u
             cloned_frame_count.lock().await.mul_assign(0);
         }
     });
-    loop {
-        let websocket = match connect_async(ws_url.clone()).await {
-            Ok((stream, _)) => Some(stream),
-            Err(e) => {
-                eprintln!(
-                    "Failed to connect to WebSocket with request \"{}\". Error was: {:?}",
-                    ws_url, e
-                );
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                continue;
-            }
-        };
 
-        if let Some(mut ws_stream) = websocket {
-            loop {
-                match mpsc_rx.recv().await {
-                    Some(pointcloud_like) => {
-                        match serde_json::to_string(&pointcloud_like) {
-                            Ok(message) => {
-                                if let Err(e) = ws_stream.send(Message::Text(message)).await {
-                                    eprintln!("Error sending message: {:?}", e);
-                                    break; // Breaks inner loop, causes reconnection in outer loop
-                                }
-                                let mut fc = frame_count.lock().await;
-                                fc.add_assign(1);
-                            }
-                            Err(e) => eprintln!("Serialization error: {:?}", e),
-                        }
-                    }
-                    None => {
-                        eprintln!("Channel closed, terminating.");
-                        return; // This is unrecoverable from in this scope
-                    }
+    loop {
+        match pointcloud_receiver.recv().await {
+            Some(message) => {
+                if let Err(e) = sender.send(message) {
+                    error!("Error sending message: {:?}", e);
+                    break; // Breaks inner loop, causes reconnection in outer loop
                 }
+                let mut fc = frame_count.lock().await;
+                fc.add_assign(1);
+            }
+            Err(e) => error!("Serialization error: {:?}", e),
+            None => {
+                error!("sender channel closed, terminating");
+                return;
             }
         }
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
 }
