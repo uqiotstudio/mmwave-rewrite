@@ -1,3 +1,7 @@
+mod address;
+mod args;
+
+use clap::Parser;
 use futures_util::{pin_mut, SinkExt, StreamExt, TryFutureExt};
 use mmwave::{
     core::{
@@ -8,27 +12,25 @@ use mmwave::{
     },
     sensors::{SensorConfig, SensorDescriptor},
 };
-use ndarray::AssignElem;
+use rand::{thread_rng, Rng};
 use reqwest::Url;
-use searchlight::{
-    discovery::{DiscoveryBuilder, DiscoveryEvent},
-    dns::rr::RData,
-    net::IpVersion,
-};
 use serde_json::{self, from_str};
 use std::{
     collections::{HashMap, HashSet},
-    env,
-    net::{IpAddr, SocketAddr, SocketAddrV6, ToSocketAddrs},
-    ops::{Add, AddAssign, Mul, MulAssign},
-    str::FromStr,
-    sync::{atomic::AtomicU32, Arc},
-    thread,
+    ops::{AddAssign, MulAssign},
+    sync::Arc,
     time::Duration,
 };
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::{select, sync::oneshot::Receiver};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tracing::{
+    error, info, info_span, instrument, level_filters::LevelFilter, span, trace, warn, Level,
+};
+use tracing_indicatif::IndicatifLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+use crate::{address::ServerAddress, args::Args};
 
 #[derive(Debug)]
 struct SensorClient {
@@ -43,145 +45,28 @@ struct AppState {
     pointcloud_sender: mpsc::Sender<PointCloudLike>,
 }
 
-async fn discover_service() -> SocketAddr {
-    let (found_tx, found_rx) = std::sync::mpsc::sync_channel(10);
-    let discovery = DiscoveryBuilder::new()
-        .loopback()
-        .service("_http._tcp.local")
-        .unwrap()
-        .build(IpVersion::Both)
-        .unwrap()
-        .run_in_background(move |event| {
-            if let DiscoveryEvent::ResponderFound(responder) = event {
-                let (name, port) = responder
-                    .last_response
-                    .additionals()
-                    .iter()
-                    .find_map(|record| {
-                        if let Some(RData::SRV(srv)) = record.data() {
-                            let name = record.name().to_utf8();
-                            let port = srv.port();
-                            Some((name.to_string(), port))
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| ("Unknown".into(), 0));
-
-                if name.contains("mmwaveserver") {
-                    dbg!(&responder);
-                    println!(
-                        "Located dns record for server:\nName:{}\nIp Addr:{}\nPort:{}",
-                        name,
-                        responder.addr.ip(),
-                        port
-                    );
-                    if responder.addr.is_ipv4() {
-                        // Ipv6 Has issues setting up http request urls
-                        let mut addr = responder.addr;
-                        addr.set_port(port);
-                        found_tx.send(addr);
-                        return;
-                    }
-                }
-            }
-        });
-
-    let server = found_rx.recv().expect("Lost mDNS discovery channel");
-    dbg!(server);
-
-    discovery.shutdown();
-    return server;
-}
-
-#[derive(Clone, Copy, Debug)]
-struct ServerAddress {
-    fixed: Option<SocketAddr>,
-    dynamic: SocketAddr,
-}
-
-impl ServerAddress {
-    async fn new() -> Self {
-        let args: Vec<String> = env::args().collect();
-        let ip_override = args
-            .get(1)
-            .cloned()
-            .map(|s| IpAddr::from_str(&s).expect("Arg 1 Is An Invalid Ip Address"));
-        let port_override = args
-            .get(2)
-            .cloned()
-            .map(|s| s.parse::<u16>().expect("Arg 2 should be a port"));
-
-        let fixed = match (ip_override, port_override) {
-            (Some(ip), Some(port)) => Some(SocketAddr::new(ip, port)),
-            _ => None,
-        };
-
-        let dynamic = match &fixed {
-            Some(address) => *address,
-            None => {
-                let address = discover_service().await;
-                address
-            }
-        };
-
-        Self { fixed, dynamic }
-    }
-
-    async fn refresh(&mut self) {
-        self.dynamic = match self.fixed {
-            Some(address) => {
-                println!("Address is fixed, no action taken.");
-                address
-            }
-            None => {
-                println!("Attempting to locate a service on the local network.");
-                let address = discover_service().await;
-                address
-            }
-        };
-        dbg!(self.dynamic);
-    }
-
-    fn address(&self) -> SocketAddr {
-        self.fixed.unwrap_or_else(|| self.dynamic)
-    }
-
-    fn url(&self) -> Url {
-        Url::parse(&format!("http://{}", self.address())).expect("Unable to parse url")
-    }
-
-    fn get_config_url(&self) -> Url {
-        Url::parse(&format!("{}get_config", self.url())).expect("Unable to parse get_config url")
-    }
-
-    fn set_config_url(&self) -> Url {
-        Url::parse(&format!("{}set_config", self.url())).expect("Unable to parse sent_config url")
-    }
-
-    fn ws_url(&self) -> Url {
-        Url::parse(&format!("ws:///{}/ws", self.address())).expect("Unable to parse websocket url")
-    }
-}
-
 #[tokio::main]
 async fn main() {
-    let args: Vec<String> = env::args().collect();
-    // If these variables are set, we NEVER look for a dns service
+    // set up logging with tracing & indicatif
+    let indicatif_layer = IndicatifLayer::new();
 
-    let server_address = ServerAddress::new().await;
+    let filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env()
+        .expect("Should be impossible")
+        .add_directive("mycrate=debug".parse().expect("Should be impossible"));
 
-    let machine_id = MachineId(
-        args.get(3)
-            .cloned()
-            .unwrap_or("0".to_owned())
-            .parse()
-            .expect("Requires Positive Integer for machine_id"),
-    );
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_writer(indicatif_layer.get_stderr_writer()))
+        .with(indicatif_layer)
+        .with(filter)
+        .init();
 
-    dbg!(server_address.address());
-    println!("{}", server_address.address());
-    println!("{}", format!("http://{}", server_address.address()));
+    let args = Args::parse();
+    let server_address = ServerAddress::new(args.clone()).await;
+    let machine_id = args.machine_id;
+
+    info!(ip = ?server_address.address(), url = %server_address.url(), "server_address");
 
     let sensors = HashMap::<SensorDescriptor, SensorClient>::new();
 
@@ -201,7 +86,7 @@ async fn main() {
     // - If a sensors descriptor (not transform) is changed, reboot it
     let mut maintenance_task = tokio::task::spawn(config_maintainer(app_state));
     let mut forwarding_task =
-        tokio::task::spawn(pointcloud_forwarding(mpsc_rx, server_address.ws_url()));
+        tokio::task::spawn(pointcloud_forwarding(mpsc_rx, server_address.url_ws()));
 
     // This should go on forever!
     select! {
@@ -216,6 +101,7 @@ async fn main() {
     };
 }
 
+#[instrument(skip_all, fields(address=%server_address.address(), machine=%machine_id.0))]
 async fn config_maintainer(
     AppState {
         mut server_address,
@@ -230,7 +116,7 @@ async fn config_maintainer(
         interval.tick().await;
 
         // Get a response from the url
-        let Ok(resp) = reqwest::get(server_address.get_config_url()).await else {
+        let Ok(resp) = reqwest::get(server_address.url_get_config()).await else {
             eprintln!("Unable to send get request, is the server not running?");
             server_address.refresh().await;
             continue;
@@ -243,7 +129,7 @@ async fn config_maintainer(
 
         // Parse a config
         let Ok(mut updated_config) = serde_json::from_str::<Configuration>(&text) else {
-            eprintln!("Unable to parse config from server response");
+            error!("Unable to parse config");
             continue;
         };
 
@@ -416,6 +302,7 @@ async fn maintainer(
     }
 }
 
+#[instrument(skip_all)]
 async fn pointcloud_forwarding(mut mpsc_rx: mpsc::Receiver<PointCloudLike>, ws_url: Url) {
     let frame_count = Arc::new(Mutex::new(0));
     let cloned_frame_count = frame_count.clone();
@@ -423,7 +310,7 @@ async fn pointcloud_forwarding(mut mpsc_rx: mpsc::Receiver<PointCloudLike>, ws_u
         let mut interval = tokio::time::interval(Duration::from_millis(10000));
         loop {
             interval.tick().await;
-            println!(
+            info!(
                 "Sent {} frames in the last 10 seconds",
                 cloned_frame_count.lock().await
             );

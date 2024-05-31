@@ -8,12 +8,14 @@ edition = "2021"
 [dependencies]
 axum = {version="0.7.4", features=["ws"]}
 chrono = { version = "0.4.37", features = ["serde"] }
+clap = {version="4.5.4", features=["derive"]}
 dyn-clone = "1.0.17"
 error = "0.1.9"
 futures-util = "0.3.30"
 libc = "0.2.153"
 ndarray = "0.15.6"
 nix = "0.28.0"
+rand = "0.8.5"
 regex = "1.10.3"
 reqwest = "0.11.24"
 rusb = "0.9.3"
@@ -24,6 +26,9 @@ serialport = "4.3.0"
 simple-dns = "0.7.0"
 tokio = {version="1.36.0", features=["full"]}
 tokio-tungstenite = "0.21.0"
+tracing = "0.1.40"
+tracing-indicatif = "0.3.6"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 typetag = "0.2.16"
 udev = "0.8.0"
 

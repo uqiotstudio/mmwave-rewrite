@@ -56,27 +56,6 @@ async fn main() {
         accumulator,
     });
 
-    // Spawn a task to update the config file every 10 seconds
-    // let app_state_cloned = app_state.clone();
-    // tokio::spawn(async move {
-    //     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
-    //     loop {
-    //         interval.tick().await;
-
-    //         let file = File::open("./server/config.json").unwrap();
-    //         let reader = BufReader::new(file);
-    //         let Ok(new_config): Result<Configuration, _> = serde_json::from_reader(reader) else {
-    //             println!("Current Config Invalid! Unable to load.");
-    //             continue;
-    //         };
-
-    //         if app_state_cloned.config.lock().await.clone() != new_config {
-    //             println!("Config Reloaded!");
-    //             *app_state_cloned.config.lock().await = new_config;
-    //         }
-    //     }
-    // });
-
     // Spawn the main loop task
     tokio::spawn(async move {
         accumulator_handler(accumulator_clone, rx, "out.json".to_string()).await

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
+use std::{num::ParseIntError, str::FromStr};
 
 use super::{config::Configuration, data::Data};
 
@@ -40,4 +40,12 @@ pub struct Message {
     pub content: MessageContent,
     pub destination: Destination,
     pub timestamp: DateTime<Utc>,
+}
+
+impl FromStr for MachineId {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<usize>().map(MachineId)
+    }
 }
