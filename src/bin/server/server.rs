@@ -7,6 +7,7 @@ use axum::{
     routing::get,
     Router,
 };
+use chrono::Utc;
 use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
 use mmwave::core::{
@@ -16,11 +17,14 @@ use mmwave::core::{
 use searchlight::broadcast::{BroadcasterBuilder, ServiceBuilder};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::{
-    mpsc::{self},
-    Mutex,
+use tokio::{
+    stream,
+    sync::{
+        mpsc::{self},
+        Mutex,
+    },
 };
-use tracing::{error, info, instrument, level_filters::LevelFilter};
+use tracing::{error, info, instrument, level_filters::LevelFilter, warn};
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -64,7 +68,7 @@ async fn main() {
     let mut app_state = AppState { relay_tx };
 
     // Spawn the relay task
-    let mut relay = tokio::task::spawn(async move { relay(relay_rx) });
+    let mut relay = tokio::task::spawn(relay(relay_rx));
 
     // Broadcast a mdns service
     tokio::task::spawn(async move {
@@ -118,7 +122,7 @@ async fn relay(mut relay_rx: mpsc::Receiver<MessageWrapper>) {
         destinations,
     }));
 
-    #[instrument(skip(server_state))]
+    #[instrument(skip_all)]
     async fn handle_server_message(
         MessageWrapper { message, sender_tx }: MessageWrapper,
         server_state: Arc<Mutex<ServerState>>,
@@ -126,10 +130,30 @@ async fn relay(mut relay_rx: mpsc::Receiver<MessageWrapper>) {
         match message.content {
             mmwave::core::message::MessageContent::DataMessage(_) => todo!(),
             mmwave::core::message::MessageContent::ConfigMessage(_) => todo!(),
-            mmwave::core::message::MessageContent::ConfigRequest(_) => todo!(),
-
-            /// Register a destination to the destination map:
+            // Send the current config to the destination provided
+            mmwave::core::message::MessageContent::ConfigRequest(destination) => {
+                info!("Received ConfigRequest message");
+                let message = Message {
+                    content: mmwave::core::message::MessageContent::ConfigMessage(
+                        server_state.lock().await.config.clone(),
+                    ),
+                    destination: destination.clone(),
+                    timestamp: Utc::now(),
+                };
+                for tx in server_state
+                    .lock()
+                    .await
+                    .destinations
+                    .entry(destination)
+                    .or_insert(Vec::new())
+                    .iter()
+                {
+                    tx.send(message.clone()).await;
+                }
+            }
+            // Register a destination to the destination map:
             mmwave::core::message::MessageContent::EstablishDestination(destination) => {
+                info!("Received EstablishDestination message");
                 if let Some(sender_tx) = sender_tx {
                     server_state
                         .lock()
@@ -137,7 +161,7 @@ async fn relay(mut relay_rx: mpsc::Receiver<MessageWrapper>) {
                         .destinations
                         .entry(destination)
                         .or_insert(Vec::new())
-                        .push(sender_tx)
+                        .push(sender_tx);
                 }
             }
         };
@@ -181,11 +205,12 @@ async fn websocket_handler(
 ) -> impl IntoResponse {
     info!(addr = %addr, "Client Connecting");
     let state = state.clone();
-    ws.on_upgrade(|socket| handle_socket(socket, state))
+    ws.on_upgrade(move |socket| handle_socket(socket, addr.clone(), state))
 }
 
 /// Handles the provided websocket
-async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
+#[instrument(skip_all, fields(addr=%addr))]
+async fn handle_socket(socket: WebSocket, addr: SocketAddr, state: Arc<AppState>) {
     // lets us forward messages to the relay
     let relay_tx = state.relay_tx.clone();
 
@@ -238,10 +263,11 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
         }
     });
 
+    info!("Socket handler starter");
     tokio::select! {
         _ = (&mut t1) => t2.abort(),
         _ = (&mut t2) => t1.abort()
     };
 
-    error!("Socket Handler Stopped");
+    warn!("Socket Handler Stopped");
 }

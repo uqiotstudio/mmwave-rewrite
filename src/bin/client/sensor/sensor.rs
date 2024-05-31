@@ -1,19 +1,20 @@
 mod address;
 mod args;
 
+use chrono::{DateTime, Utc};
 use clap::Parser;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{FutureExt, SinkExt, StreamExt};
 use mmwave::{
     core::{
         config::Configuration,
         data::Data,
-        message::{self, MachineId, Message},
-        pointcloud::{IntoPointCloud, PointCloud},
+        message::{self, Destination, MachineId, Message},
+        pointcloud::IntoPointCloud,
         transform::Transform,
     },
     sensors::{SensorConfig, SensorDescriptor},
 };
-use reqwest::Url;
+
 use serde_json::{self};
 use std::{
     collections::{HashMap, HashSet},
@@ -24,7 +25,7 @@ use std::{
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio::{select, sync::oneshot::Receiver};
 use tokio_tungstenite::connect_async;
-use tracing::{error, info, instrument, level_filters::LevelFilter, warn};
+use tracing::{debug, error, info, instrument, level_filters::LevelFilter, warn};
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -102,8 +103,8 @@ async fn relay(
         pointcloud_rx,
     ));
 
-    // 250ms polling rate
-    let mut interval = tokio::time::interval(Duration::from_millis(250));
+    // polling rate
+    let mut interval = tokio::time::interval(Duration::from_millis(1000));
     loop {
         interval.tick().await;
 
@@ -114,11 +115,7 @@ async fn relay(
         let (mut ws_tx, mut ws_rx) = match connect_async(server_address.url_ws()).await {
             Ok((stream, _)) => stream,
             Err(e) => {
-                error!(
-                    "Failed to connect to WebSocket with request \"{}\". Error was: {:?}",
-                    server_address.url_ws(),
-                    e
-                );
+                warn!("Unable to connect to server");
                 continue;
             }
         }
@@ -158,12 +155,31 @@ async fn relay(
                     break;
                 };
 
-                ws_tx.send(tokio_tungstenite::tungstenite::Message::Text(message));
+                info!(message = message, "Sending Message");
+
+                ws_tx
+                    .send(tokio_tungstenite::tungstenite::Message::Text(message))
+                    .await;
             }
         });
 
+        // Send any initialization messages
+        outbound_tx.send(Message {
+            content: message::MessageContent::EstablishDestination(Destination::Machine(
+                machine_id,
+            )),
+            destination: Destination::Server,
+            timestamp: Utc::now(),
+        });
+
+        outbound_tx.send(Message {
+            content: message::MessageContent::ConfigRequest(Destination::Machine(machine_id)),
+            destination: Destination::Server,
+            timestamp: Utc::now(),
+        });
+
         // This should go until one closes
-        select! {
+        tokio::select! {
             _ = &mut inbound_task => {
                 warn!("Inbound Task Closed");
                 outbound_task.abort();
@@ -397,8 +413,8 @@ async fn desc_maintainer(
 #[instrument(skip_all)]
 async fn producer(
     AppState {
-        mut server_address,
-        machine_id,
+        server_address: _,
+        machine_id: _,
     }: AppState,
     sender: tokio::sync::broadcast::Sender<Message>,
     mut pointcloud_receiver: tokio::sync::mpsc::Receiver<Data>,
@@ -419,7 +435,13 @@ async fn producer(
 
     loop {
         match pointcloud_receiver.recv().await {
-            Some(message) => {
+            Some(data) => {
+                let message = Message {
+                    content: message::MessageContent::DataMessage(data),
+                    destination: Destination::DataListener,
+                    timestamp: Utc::now(),
+                };
+
                 if let Err(e) = sender.send(message) {
                     error!("Error sending message: {:?}", e);
                     break; // Breaks inner loop, causes reconnection in outer loop
@@ -427,7 +449,6 @@ async fn producer(
                 let mut fc = frame_count.lock().await;
                 fc.add_assign(1);
             }
-            Err(e) => error!("Serialization error: {:?}", e),
             None => {
                 error!("sender channel closed, terminating");
                 return;

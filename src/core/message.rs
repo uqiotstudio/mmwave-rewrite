@@ -17,6 +17,8 @@ pub enum Destination {
     Visualiser,
     /// Message for writer
     Writer,
+    /// Message for anything interested in data
+    DataListener,
 }
 
 #[derive(Hash, Eq, PartialEq, Serialize, Deserialize, Debug, Clone, Copy)]
