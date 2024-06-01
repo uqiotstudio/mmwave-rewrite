@@ -14,17 +14,23 @@ use mmwave::core::{
     config::Configuration,
     message::{Destination, Message},
 };
+use mmwave::core::{message::Id, relay::Relay};
 use searchlight::broadcast::{BroadcasterBuilder, ServiceBuilder};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashSet,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+};
 use tokio::{
     stream,
     sync::{
+        broadcast,
         mpsc::{self},
         Mutex,
     },
+    task::JoinHandle,
 };
-use tracing::{error, info, instrument, level_filters::LevelFilter, warn};
+use tracing::{error, info, info_span, instrument, level_filters::LevelFilter, warn};
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -33,13 +39,23 @@ struct AppState {
     relay_tx: mpsc::Sender<MessageWrapper>,
 }
 
-#[derive(Clone)]
-struct ServerState {
+struct RelayState {
     config: Configuration,
-    destinations: HashMap<Destination, Vec<mpsc::Sender<Message>>>,
+    relay_joins: HashMap<Id, JoinHandle<()>>,
+    relay: Relay<MessageWrapper>,
 }
 
-#[derive(Clone)]
+impl Default for RelayState {
+    fn default() -> Self {
+        RelayState {
+            config: Configuration::default(),
+            relay_joins: HashMap::new(),
+            relay: Relay::<MessageWrapper>::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 struct MessageWrapper {
     message: Message,
     sender_tx: Option<mpsc::Sender<Message>>,
@@ -111,89 +127,109 @@ async fn main() {
 
 #[instrument(skip_all)]
 async fn relay(mut relay_rx: mpsc::Receiver<MessageWrapper>) {
-    // establish the config held by this relay
-    let config = Configuration::default();
+    let relay_state_orig = Arc::new(Mutex::new(RelayState::default()));
 
-    // establish the mapping of destinations to sockets
-    let destinations = HashMap::<Destination, Vec<mpsc::Sender<Message>>>::new();
+    // Set up the realy, with a server_rx for server messages
+    let relay_state = relay_state_orig.clone();
+    relay_state
+        .lock()
+        .await
+        .relay
+        .register(Id::Machine(0), Destination::Server);
+    let mut server_rx = relay_state
+        .lock()
+        .await
+        .relay
+        .subscribe(Id::Machine(0))
+        .expect("Failed to subscribe server to relay");
 
-    let server_state = Arc::new(Mutex::new(ServerState {
-        config,
-        destinations,
-    }));
-
-    #[instrument(skip_all)]
-    async fn handle_server_message(
-        MessageWrapper { message, sender_tx }: MessageWrapper,
-        server_state: Arc<Mutex<ServerState>>,
-    ) {
-        match message.content {
-            mmwave::core::message::MessageContent::DataMessage(_) => todo!(),
-            mmwave::core::message::MessageContent::ConfigMessage(_) => todo!(),
-            // Send the current config to the destination provided
-            mmwave::core::message::MessageContent::ConfigRequest(destination) => {
-                info!("Received ConfigRequest message");
-                let message = Message {
-                    content: mmwave::core::message::MessageContent::ConfigMessage(
-                        server_state.lock().await.config.clone(),
-                    ),
-                    destination: destination.clone(),
-                    timestamp: Utc::now(),
-                };
-                for tx in server_state
-                    .lock()
-                    .await
-                    .destinations
-                    .entry(destination)
-                    .or_insert(Vec::new())
-                    .iter()
-                {
-                    tx.send(message.clone()).await;
+    #[instrument(skip_all, fields(id=?id))]
+    async fn join(id: Id, mut rx: broadcast::Receiver<MessageWrapper>, tx: mpsc::Sender<Message>) {
+        loop {
+            tokio::select! {
+                Ok(MessageWrapper {
+                  message,
+                  sender_tx: _,
+                }) = rx.recv() => {
+                    let _ = tx.send(message).await;
+                }
+                _ = tx.closed() => {
+                    warn!("Join Closed");
+                    break;
                 }
             }
-            // Register a destination to the destination map:
-            mmwave::core::message::MessageContent::EstablishDestination(destination) => {
-                info!("Received EstablishDestination message");
-                if let Some(sender_tx) = sender_tx {
-                    server_state
-                        .lock()
-                        .await
-                        .destinations
-                        .entry(destination)
-                        .or_insert(Vec::new())
-                        .push(sender_tx);
-                }
-            }
-        };
+        }
     }
 
-    // Receive messages from relay_rx and forward them to destinations
-    // if the destination is server, handle the message here!
-    while let Some(MessageWrapper { message, sender_tx }) = relay_rx.recv().await {
-        match message.destination.clone() {
-            // Rewrap the message and forward it to the relay handler
-            Destination::Server => {
-                tokio::task::spawn(handle_server_message(
-                    MessageWrapper { message, sender_tx },
-                    server_state.clone(),
-                ));
-            }
-            // Otherwise, forward the message to all appropriate destinations
-            other => {
-                for tx in server_state
-                    .lock()
-                    .await
-                    .destinations
-                    .entry(other)
-                    .or_insert(Vec::new())
-                    .iter()
-                {
-                    if let Err(e) = tx.send(message.clone()).await {
-                        error!("Unable to send message to socket handler, {:?}", e);
-                    }
+    // Receive server messages, handle them
+    tokio::task::spawn(async move {
+        while let Ok(MessageWrapper { message, sender_tx }) = server_rx.recv().await {
+            match message.content {
+                mmwave::core::message::MessageContent::DataMessage(_) => todo!(),
+                mmwave::core::message::MessageContent::ConfigMessage(_) => todo!(),
+                mmwave::core::message::MessageContent::ConfigRequest(destination) => {
+                    info!("Received ConfigRequest message");
+                    // Create and send a config message to the destination specified:
+                    let message = Message {
+                        content: mmwave::core::message::MessageContent::ConfigMessage(
+                            relay_state.lock().await.config.clone(),
+                        ),
+                        destination: HashSet::from([destination.clone()]),
+                        timestamp: Utc::now(),
+                    };
+                    relay_state.lock().await.relay.forward(
+                        message.destination.clone(),
+                        MessageWrapper {
+                            message,
+                            sender_tx: None,
+                        },
+                    );
                 }
+                mmwave::core::message::MessageContent::RegisterId(id, destinations) => {
+                    let mut relay_state = relay_state.lock().await;
+                    info!(
+                        "Connecting {:?} to {} destinations {:?}",
+                        id,
+                        destinations.len(),
+                        destinations
+                    );
+                    for destination in destinations {
+                        relay_state.relay.register(id, destination);
+                    }
+                    if let Some(join_handle) = relay_state.relay_joins.get(&id) {
+                        if !join_handle.is_finished() {
+                            continue;
+                        }
+                    }
+
+                    let Some(sender_tx) = sender_tx else {
+                        error!("Unable to unwrap sender_tx");
+                        continue;
+                    };
+                    let Some(mut rx) = relay_state.relay.subscribe(id) else {
+                        error!("Unable to subscribe to id {:?}", id);
+                        continue;
+                    };
+
+                    // this is a new task, OR the previous one ended
+                    relay_state
+                        .relay_joins
+                        .insert(id, tokio::task::spawn(join(id, rx, sender_tx)));
+                }
+                mmwave::core::message::MessageContent::DeregisterId(_, _) => todo!(),
             }
-        };
+        }
+    });
+
+    // Receive messages from relay_rx and forward them to destinations
+    let relay_state = relay_state_orig.clone();
+    while let Some(MessageWrapper { message, sender_tx }) = relay_rx.recv().await {
+        info!(message=?message, "Message received by relay");
+        relay_state.lock().await.relay.forward(
+            message.destination.clone(),
+            MessageWrapper { message, sender_tx },
+        );
+        info!("Message forwarded along relay");
     }
 }
 

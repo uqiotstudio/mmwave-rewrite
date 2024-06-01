@@ -7,7 +7,7 @@ use std::hash::Hash;
 use serde::{Deserialize, Serialize};
 
 use crate::core::data::Data;
-use crate::core::message::MachineId;
+use crate::core::message::Id;
 use crate::core::transform::Transform;
 
 use self::awr::error::{RadarInitError, RadarReadError};
@@ -21,7 +21,7 @@ pub trait Sensor: Send {
 
 #[derive(PartialEq, Serialize, Deserialize, Debug, Clone)]
 pub struct SensorConfig {
-    pub machine_id: MachineId,
+    pub machine_id: Id,
     pub sensor_descriptor: SensorDescriptor,
     pub transform: Transform,
 }

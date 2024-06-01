@@ -1,7 +1,7 @@
 use std::net::IpAddr;
 
 use clap::Parser;
-use mmwave::core::message::MachineId;
+use mmwave::core::message::Id;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -15,6 +15,6 @@ pub struct Args {
     pub port: u16,
 
     /// Number of times to greet
-    #[arg(short, long, default_value = "1")]
-    pub machine_id: MachineId,
+    #[arg(short, long)]
+    pub machine_id: Id,
 }

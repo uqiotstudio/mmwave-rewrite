@@ -10,10 +10,10 @@ use crate::{
     sensors::{Sensor, SensorConfig},
 };
 
-use super::{data::Data, message::MachineId};
+use super::{data::Data, message::Id};
 
 pub struct Manager {
-    machine_id: MachineId,
+    machine_id: Id,
     config: Configuration,
     pointcloud_sender: mpsc::Sender<Data>,
     pointcloud_receiver: mpsc::Receiver<Data>,
@@ -23,7 +23,7 @@ pub struct Manager {
 }
 
 impl Manager {
-    pub fn new(machine_id: MachineId) -> Self {
+    pub fn new(machine_id: Id) -> Self {
         let (tx, rx) = watch::channel(false);
         let (tx2, rx2) = mpsc::channel(100);
         Manager {

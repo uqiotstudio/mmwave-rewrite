@@ -1,19 +1,19 @@
 use super::{config::Configuration, data::Data};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::{num::ParseIntError, str::FromStr};
+use std::{collections::HashSet, num::ParseIntError, str::FromStr};
 
 #[derive(Serialize, Deserialize, Debug, Hash, Clone, Eq, PartialEq)]
 pub enum Destination {
     /// Message for all clients (not server)
     Global,
     /// Message for a specific machine
-    Machine(MachineId),
+    Id(Id),
     /// Message for all sensors
     Sensor,
     /// Message for server
     Server,
-    /// Message for visualiser
+    /// Message for visualisers
     Visualiser,
     /// Message for writer
     Writer,
@@ -22,7 +22,10 @@ pub enum Destination {
 }
 
 #[derive(Hash, Eq, PartialEq, Serialize, Deserialize, Debug, Clone, Copy)]
-pub struct MachineId(pub usize);
+pub enum Id {
+    Machine(usize),
+    Device(usize, usize),
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MessageContent {
@@ -33,20 +36,27 @@ pub enum MessageContent {
     /// Requests the config be sent to the provided destination
     ConfigRequest(Destination),
     /// The producing client will be registered to listen for messages sent to the provided destination
-    EstablishDestination(Destination),
+    RegisterId(Id, HashSet<Destination>),
+    /// Deregisters a registered ID
+    DeregisterId(Id, HashSet<Destination>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message {
     pub content: MessageContent,
-    pub destination: Destination,
+    pub destination: HashSet<Destination>,
     pub timestamp: DateTime<Utc>,
 }
 
-impl FromStr for MachineId {
+pub enum IdParseError {
+    InvalidFormat,
+    ParseIntError(ParseIntError),
+}
+
+impl FromStr for Id {
     type Err = ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<usize>().map(MachineId)
+        s.parse::<usize>().map(Id::Machine)
     }
 }

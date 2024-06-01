@@ -6,4 +6,5 @@ pub mod message;
 pub mod point;
 pub mod pointcloud;
 pub mod pointcloud_stream;
+pub mod relay;
 pub mod transform;

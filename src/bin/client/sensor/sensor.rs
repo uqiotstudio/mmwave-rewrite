@@ -8,7 +8,7 @@ use mmwave::{
     core::{
         config::Configuration,
         data::Data,
-        message::{self, Destination, MachineId, Message},
+        message::{self, Destination, Id, Message},
         pointcloud::IntoPointCloud,
         transform::Transform,
     },
@@ -39,7 +39,7 @@ struct SensorClient {
 
 struct AppState {
     server_address: ServerAddress,
-    machine_id: MachineId,
+    id: Id,
 }
 
 #[tokio::main]
@@ -61,24 +61,24 @@ async fn main() {
 
     let args = Args::parse();
     let server_address = ServerAddress::new(args.clone()).await;
-    let machine_id = args.machine_id;
+    let id = args.machine_id;
 
     info!(ip = ?server_address.address(), url = %server_address.url(), "server_address");
 
     let app_state = AppState {
         server_address: server_address.clone(),
-        machine_id,
+        id,
     };
 
     // This should never end, ideally
     relay(app_state).await;
 }
 
-#[instrument(skip_all, fields(address=%server_address.address(), machine=%machine_id.0))]
+#[instrument(skip_all, fields(address=%server_address.address(), machine=?id))]
 async fn relay(
     AppState {
         mut server_address,
-        machine_id,
+        id,
     }: AppState,
 ) {
     let (inbound_tx, inbound_rx) = mpsc::channel::<Message>(100);
@@ -87,18 +87,12 @@ async fn relay(
 
     // Spawn the producer and inbound_handler
     tokio::task::spawn(inbound_handler(
-        AppState {
-            server_address,
-            machine_id,
-        },
+        AppState { server_address, id },
         inbound_rx,
         pointcloud_tx,
     ));
     tokio::task::spawn(producer(
-        AppState {
-            server_address,
-            machine_id,
-        },
+        AppState { server_address, id },
         outbound_tx.clone(),
         pointcloud_rx,
     ));
@@ -165,16 +159,14 @@ async fn relay(
 
         // Send any initialization messages
         outbound_tx.send(Message {
-            content: message::MessageContent::EstablishDestination(Destination::Machine(
-                machine_id,
-            )),
-            destination: Destination::Server,
+            content: message::MessageContent::RegisterId(id, HashSet::from([Destination::Id(id)])),
+            destination: HashSet::from([Destination::Server]),
             timestamp: Utc::now(),
         });
 
         outbound_tx.send(Message {
-            content: message::MessageContent::ConfigRequest(Destination::Machine(machine_id)),
-            destination: Destination::Server,
+            content: message::MessageContent::ConfigRequest(Destination::Id(id)),
+            destination: HashSet::from([Destination::Server]),
             timestamp: Utc::now(),
         });
 
@@ -192,11 +184,11 @@ async fn relay(
     }
 }
 
-#[instrument(skip_all, fields(address=%server_address.address(), machine=%machine_id.0))]
+#[instrument(skip_all, fields(address=%server_address.address(), machine=?id))]
 async fn inbound_handler(
     AppState {
         mut server_address,
-        machine_id,
+        id,
     }: AppState,
     mut receiver: tokio::sync::mpsc::Receiver<Message>,
     mut pointcloud_sender: tokio::sync::mpsc::Sender<Data>,
@@ -216,10 +208,7 @@ async fn inbound_handler(
             message::MessageContent::ConfigMessage(mut config) => {
                 info!("Received config message");
                 update_config(
-                    AppState {
-                        server_address,
-                        machine_id,
-                    },
+                    AppState { server_address, id },
                     config,
                     &mut sensors,
                     &mut pointcloud_sender,
@@ -229,9 +218,10 @@ async fn inbound_handler(
             message::MessageContent::ConfigRequest(_) => {
                 error!("Received Unsupported Message");
             }
-            message::MessageContent::EstablishDestination(_) => {
+            message::MessageContent::RegisterId(_, _) => {
                 error!("Received Unsupported Message");
             }
+            message::MessageContent::DeregisterId(_, _) => todo!(),
         }
     }
 }
@@ -239,7 +229,7 @@ async fn inbound_handler(
 async fn update_config(
     AppState {
         mut server_address,
-        machine_id,
+        id: machine_id,
     }: AppState,
     mut updated_config: Configuration,
     sensors: &mut HashMap<SensorDescriptor, SensorClient>,
@@ -414,7 +404,7 @@ async fn desc_maintainer(
 async fn producer(
     AppState {
         server_address: _,
-        machine_id: _,
+        id: _,
     }: AppState,
     sender: tokio::sync::broadcast::Sender<Message>,
     mut pointcloud_receiver: tokio::sync::mpsc::Receiver<Data>,
@@ -438,7 +428,7 @@ async fn producer(
             Some(data) => {
                 let message = Message {
                     content: message::MessageContent::DataMessage(data),
-                    destination: Destination::DataListener,
+                    destination: HashSet::from([Destination::DataListener]),
                     timestamp: Utc::now(),
                 };
 
