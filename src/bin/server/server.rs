@@ -6,7 +6,7 @@ use axum::{
 };
 use chrono::Utc;
 use clap::Parser;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{stream::SplitStream, SinkExt, StreamExt};
 use indicatif::ProgressStyle;
 use mmwave::core::{
     config::Configuration,
@@ -217,12 +217,10 @@ async fn websocket_handler(
 #[instrument(skip_all, fields(addr=%addr))]
 async fn handle_socket(socket: WebSocket, addr: SocketAddr, state: AppState) {
     let (mut socket_tx, mut socket_rx) = socket.split();
-
     let relay = state.relay.clone();
-
     let (traceback_tx, mut traceback_rx) = broadcast::channel(100);
-
     let (outbound_tx, mut outbound_rx) = broadcast::channel(100);
+
     tokio::task::spawn(async move {
         while let Ok(out) = outbound_rx.recv().await {
             socket_tx.send(out).await;
@@ -231,67 +229,18 @@ async fn handle_socket(socket: WebSocket, addr: SocketAddr, state: AppState) {
 
     // Forward WebSocket messages to relay
     let relay_tx_span = tracing::info_span!("inbound");
-    let mut relay_tx_task = tokio::spawn({
-        let relay = relay.clone();
-        async move {
-            while let Some(Ok(axum::extract::ws::Message::Text(message))) = socket_rx.next().await {
-                let message = match serde_json::from_str::<Message>(&message) {
-                    Ok(msg) => msg,
-                    Err(e) => {
-                        error!(error = %e, "Error parsing message");
-                        continue;
-                    }
-                };
-
-                relay.lock().await.forward(
-                    message.destination.clone(),
-                    TraceableMessage {
-                        message,
-                        tx: traceback_tx.clone(),
-                    },
-                );
-            }
-        }
-        .instrument(relay_tx_span)
-    });
+    let mut relay_tx_task = tokio::spawn(
+        forward_websocket_to_relay(relay.clone(), socket_rx, traceback_tx)
+            .instrument(relay_tx_span),
+    );
 
     // Forward relay messages to WebSocket
     let relay_rx_span = tracing::info_span!("outbound");
     let tasks = Arc::new(Mutex::new(Vec::new()));
-    let mut relay_rx_task = tokio::spawn({
-        let relay = relay.clone();
-        let tasks = tasks.clone();
-        let span = relay_rx_span.clone();
-        async move {
-            while let Ok(id) = traceback_rx.recv().await {
-                let span = span.clone();
-                let id_span = tracing::info_span!(parent: span, "subscription", subscriber=%id);
-                tasks.lock().await.push(tokio::task::spawn({
-                    let relay = relay.clone();
-                    let outbound_tx = outbound_tx.clone();
-                    async move {
-                        let mut rx = relay.lock().await.subscribe(id.clone());
-
-                        while let Ok(TraceableMessage { message, tx }) = rx.recv().await {
-                            let message = match serde_json::to_string(&message) {
-                                Ok(msg) => msg,
-                                Err(e) => {
-                                    error!(error = %e, "Error serializing message");
-                                    continue;
-                                }
-                            };
-
-                            outbound_tx
-                                .send(axum::extract::ws::Message::Text(message))
-                                .expect("Unable to send message to outbound_tx");
-                        }
-                    }
-                    .instrument(id_span)
-                }));
-            }
-        }
-        .instrument(relay_rx_span)
-    });
+    let mut relay_rx_task = tokio::spawn(
+        forward_relay_to_websocket(relay.clone(), traceback_rx, outbound_tx, tasks.clone())
+            .instrument(relay_rx_span),
+    );
 
     tokio::select! {
         _ = (&mut relay_tx_task) => {
@@ -303,6 +252,67 @@ async fn handle_socket(socket: WebSocket, addr: SocketAddr, state: AppState) {
     }
 
     tasks.lock().await.iter().for_each(|t| t.abort());
-
     info!(%addr, "Connection closed");
+}
+
+async fn forward_websocket_to_relay(
+    relay: Arc<Mutex<Relay<TraceableMessage>>>,
+    mut socket_rx: SplitStream<WebSocket>,
+    traceback_tx: broadcast::Sender<Id>,
+) {
+    while let Some(Ok(axum::extract::ws::Message::Text(message))) = socket_rx.next().await {
+        let message = match serde_json::from_str::<Message>(&message) {
+            Ok(msg) => msg,
+            Err(e) => {
+                error!(error = %e, "Error parsing message");
+                continue;
+            }
+        };
+
+        relay.lock().await.forward(
+            message.destination.clone(),
+            TraceableMessage {
+                message,
+                tx: traceback_tx.clone(),
+            },
+        );
+    }
+}
+
+async fn forward_relay_to_websocket(
+    relay: Arc<Mutex<Relay<TraceableMessage>>>,
+    mut traceback_rx: broadcast::Receiver<Id>,
+    outbound_tx: broadcast::Sender<axum::extract::ws::Message>,
+    tasks: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+) {
+    while let Ok(id) = traceback_rx.recv().await {
+        let id_span = tracing::info_span!("subscription", subscriber=%id);
+        let task = tokio::task::spawn(
+            subscribe_to_relay(relay.clone(), id, outbound_tx.clone()).instrument(id_span),
+        );
+
+        tasks.lock().await.push(task);
+    }
+}
+
+async fn subscribe_to_relay(
+    relay: Arc<Mutex<Relay<TraceableMessage>>>,
+    id: Id,
+    outbound_tx: broadcast::Sender<axum::extract::ws::Message>,
+) {
+    let mut rx = relay.lock().await.subscribe(id.clone());
+
+    while let Ok(TraceableMessage { message, tx: _ }) = rx.recv().await {
+        let message = match serde_json::to_string(&message) {
+            Ok(msg) => msg,
+            Err(e) => {
+                error!(error = %e, "Error serializing message");
+                continue;
+            }
+        };
+
+        outbound_tx
+            .send(axum::extract::ws::Message::Text(message))
+            .expect("Unable to send message to outbound_tx");
+    }
 }
