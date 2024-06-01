@@ -157,14 +157,26 @@ async fn relay(
             }
         });
 
+        let i = match id {
+            Id::Machine(i) => i,
+            Id::Device(_, _) => todo!(),
+        };
+
         // Send any initialization messages
-        outbound_tx.send(Message {
-            content: message::MessageContent::RegisterId(id, HashSet::from([Destination::Id(id)])),
+        let _ = outbound_tx.send(Message {
+            content: message::MessageContent::RegisterId(
+                HashSet::from([id, Id::Device(i, 1), Id::Device(i, 2)]),
+                HashSet::from([
+                    Destination::Id(id.clone()),
+                    Destination::DataListener,
+                    Destination::Sensor,
+                ]),
+            ),
             destination: HashSet::from([Destination::Server]),
             timestamp: Utc::now(),
         });
 
-        outbound_tx.send(Message {
+        let _ = outbound_tx.send(Message {
             content: message::MessageContent::ConfigRequest(Destination::Id(id)),
             destination: HashSet::from([Destination::Server]),
             timestamp: Utc::now(),

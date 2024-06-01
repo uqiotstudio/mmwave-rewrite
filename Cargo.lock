@@ -1052,6 +1052,7 @@ dependencies = [
  "dyn-clone",
  "error",
  "futures-util",
+ "indicatif",
  "libc",
  "ndarray",
  "nix 0.28.0",

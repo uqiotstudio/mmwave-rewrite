@@ -12,6 +12,7 @@ clap = {version="4.5.4", features=["derive"]}
 dyn-clone = "1.0.17"
 error = "0.1.9"
 futures-util = "0.3.30"
+indicatif = "0.17.8"
 libc = "0.2.153"
 ndarray = "0.15.6"
 nix = "0.28.0"

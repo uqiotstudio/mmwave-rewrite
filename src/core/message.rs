@@ -1,7 +1,12 @@
 use super::{config::Configuration, data::Data};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, num::ParseIntError, str::FromStr};
+use std::{
+    collections::HashSet,
+    fmt::{self, Display, Formatter},
+    num::ParseIntError,
+    str::FromStr,
+};
 
 #[derive(Serialize, Deserialize, Debug, Hash, Clone, Eq, PartialEq)]
 pub enum Destination {
@@ -21,10 +26,33 @@ pub enum Destination {
     DataListener,
 }
 
+impl Display for Destination {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Destination::Global => write!(f, "global"),
+            Destination::Id(id) => write!(f, "id({})", id),
+            Destination::Sensor => write!(f, "sensor"),
+            Destination::Server => write!(f, "server"),
+            Destination::Visualiser => write!(f, "visualiser"),
+            Destination::Writer => write!(f, "writer"),
+            Destination::DataListener => write!(f, "datalistener"),
+        }
+    }
+}
+
 #[derive(Hash, Eq, PartialEq, Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum Id {
     Machine(usize),
     Device(usize, usize),
+}
+
+impl Display for Id {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Id::Machine(id) => write!(f, "{}", id),
+            Id::Device(m, d) => write!(f, "{}:{}", m, d),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -35,10 +63,26 @@ pub enum MessageContent {
     ConfigMessage(Configuration),
     /// Requests the config be sent to the provided destination
     ConfigRequest(Destination),
-    /// The producing client will be registered to listen for messages sent to the provided destination
-    RegisterId(Id, HashSet<Destination>),
+    /// Register all given ids to listen for messages going to the listed destinations
+    RegisterId(HashSet<Id>, HashSet<Destination>),
     /// Deregisters a registered ID
     DeregisterId(Id, HashSet<Destination>),
+}
+
+impl Display for MessageContent {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            MessageContent::DataMessage(_) => write!(f, "DataMessage"),
+            MessageContent::ConfigMessage(_) => write!(f, "ConfigMessage"),
+            MessageContent::ConfigRequest(dest) => write!(f, "ConfigRequest({:?})", dest),
+            MessageContent::RegisterId(id, dests) => {
+                write!(f, "RegisterId({:?}, {:?})", id, dests)
+            }
+            MessageContent::DeregisterId(id, dests) => {
+                write!(f, "DeregisterId({:?}, {:?})", id, dests)
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -46,6 +90,16 @@ pub struct Message {
     pub content: MessageContent,
     pub destination: HashSet<Destination>,
     pub timestamp: DateTime<Utc>,
+}
+
+impl Display for Message {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Message {{ content: {}, destination: {:?}, timestamp: {} }}",
+            self.content, self.destination, self.timestamp
+        )
+    }
 }
 
 pub enum IdParseError {
