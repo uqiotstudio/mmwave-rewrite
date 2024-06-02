@@ -67,6 +67,8 @@ pub enum MessageContent {
     RegisterId(HashSet<Id>, HashSet<Destination>),
     /// Deregisters a registered ID
     DeregisterId(Id, HashSet<Destination>),
+    /// Tells the receiving machine/device to reboot
+    Reboot,
 }
 
 impl Display for MessageContent {
@@ -81,6 +83,7 @@ impl Display for MessageContent {
             MessageContent::DeregisterId(id, dests) => {
                 write!(f, "DeregisterId({:?}, {:?})", id, dests)
             }
+            MessageContent::Reboot => write!(f, "Reboot"),
         }
     }
 }

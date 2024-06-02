@@ -33,6 +33,7 @@ pub struct Args {
     #[arg(short, long, default_value_t = 3000)]
     pub port: u16,
 
+    /// Whether to enable debug logging
     #[arg(short, long, default_value_t = false)]
     pub debug: bool,
 }
@@ -52,12 +53,6 @@ impl Display for TraceableMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.message)
     }
-}
-
-fn set_panic_hook() {
-    panic::set_hook(Box::new(|panic_info| {
-        error!("Panic occurred: {:?}", panic_info);
-    }));
 }
 
 #[tokio::main]
@@ -110,6 +105,12 @@ fn setup_logging(debug: bool) {
         .with(indicatif_layer)
         .with(filter)
         .init();
+}
+
+fn set_panic_hook() {
+    panic::set_hook(Box::new(|panic_info| {
+        error!("Panic occurred: {:?}", panic_info);
+    }));
 }
 
 /// Registers the server and listens for incoming messages to process them.
@@ -166,6 +167,7 @@ async fn register_server(relay: Arc<Mutex<Relay<TraceableMessage>>>) {
                     }
                 }
                 mmwave::core::message::MessageContent::DeregisterId(_, _) => todo!(),
+                mmwave::core::message::MessageContent::Reboot => todo!(),
             }
         }
     });

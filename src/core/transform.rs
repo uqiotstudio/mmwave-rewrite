@@ -1,7 +1,7 @@
 use ndarray::array;
 use serde::{Deserialize, Serialize};
 
-#[derive(PartialEq, Serialize, Deserialize, Debug, Clone)]
+#[derive(PartialEq, Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Transform {
     pub translation: [f32; 3], // Translation of the camera in meters, x, y, z
     pub orientation: [f32; 2], // Orientation of the camera in radians, yaw, pitch

@@ -22,6 +22,7 @@ impl ServerAddress {
             ip,
             port,
             machine_id: _,
+            debug: _,
         } = args;
 
         let (address, is_fixed) = match ip {

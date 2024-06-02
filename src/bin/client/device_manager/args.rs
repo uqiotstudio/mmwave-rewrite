@@ -17,4 +17,8 @@ pub struct Args {
     /// Number of times to greet
     #[arg(short, long)]
     pub machine_id: Id,
+
+    /// Enable debug logging
+    #[arg(short, long, default_value_t = false)]
+    pub debug: bool,
 }

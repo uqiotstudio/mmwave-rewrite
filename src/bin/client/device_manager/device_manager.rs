@@ -4,12 +4,14 @@ mod args;
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use futures_util::{FutureExt, SinkExt, StreamExt};
+use indicatif::ProgressStyle;
 use mmwave::{
     core::{
         config::Configuration,
         data::Data,
         message::{self, Destination, Id, Message},
         pointcloud::IntoPointCloud,
+        relay::Relay,
         transform::Transform,
     },
     sensors::{SensorConfig, SensorDescriptor},
@@ -19,13 +21,16 @@ use serde_json::{self};
 use std::{
     collections::{HashMap, HashSet},
     ops::{AddAssign, MulAssign},
+    panic,
     sync::Arc,
     time::Duration,
 };
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio::{select, sync::oneshot::Receiver};
 use tokio_tungstenite::connect_async;
-use tracing::{debug, error, info, instrument, level_filters::LevelFilter, warn};
+use tracing::{
+    debug, error, info, info_span, instrument, level_filters::LevelFilter, warn, Instrument,
+};
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -37,50 +42,167 @@ struct SensorClient {
     kill_signal: oneshot::Sender<()>,
 }
 
+#[derive(Clone)]
 struct AppState {
-    server_address: ServerAddress,
+    server_address: Arc<Mutex<ServerAddress>>,
     id: Id,
+    relay: Arc<Mutex<Relay<Message>>>,
 }
 
 #[tokio::main]
 async fn main() {
-    // set up logging with tracing & indicatif
-    let indicatif_layer = IndicatifLayer::new();
-
-    let filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
-        .from_env()
-        .expect("Should be impossible")
-        .add_directive("mycrate=debug".parse().expect("Should be impossible"));
-
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().with_writer(indicatif_layer.get_stderr_writer()))
-        .with(indicatif_layer)
-        .with(filter)
-        .init();
-
     let args = Args::parse();
+    setup_logging(args.debug);
+    set_panic_hook();
+
     let server_address = ServerAddress::new(args.clone()).await;
     let id = args.machine_id;
 
     info!(ip = ?server_address.address(), url = %server_address.url(), "server_address");
 
     let app_state = AppState {
-        server_address: server_address.clone(),
+        server_address: Arc::new(Mutex::new(server_address.clone())),
         id,
+        relay: Arc::new(Mutex::new(Relay::new())),
     };
 
+    // messages produced by devices are sent to tx, and then forwarded to the websocket
+    let (outgoing_tx, outgoing_rx) = broadcast::channel::<Message>(100);
+
     // This should never end, ideally
-    relay(app_state).await;
+    tokio::task::spawn(manage_devices(app_state.clone(), outbound_tx));
+    tokio::task::spawn(manage_connection(app_state.clone(), outbound_rx));
+}
+
+fn setup_logging(debug: bool) {
+    let indicatif_layer =
+        IndicatifLayer::new().with_max_progress_bars(100, Some(ProgressStyle::default_bar()));
+    let mut filter = EnvFilter::builder()
+        .with_default_directive(tracing::Level::INFO.into())
+        .from_env()
+        .expect("Failed to parse environment filter");
+
+    if debug {
+        filter = filter.add_directive("mmwave=debug".parse().expect("Failed to parse directive"));
+    }
+
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_writer(indicatif_layer.get_stderr_writer()))
+        .with(indicatif_layer)
+        .with(filter)
+        .init();
+}
+
+fn set_panic_hook() {
+    panic::set_hook(Box::new(|panic_info| {
+        error!("Panic occurred: {:?}", panic_info);
+    }));
+}
+
+#[instrument(skip_all, fields(address=%server_address.lock().await.address(), machine=?id))]
+async fn manage_connection(
+    AppState {
+        server_address,
+        id,
+        relay,
+    }: AppState,
+    outbound_rx: broadcast::Receiver<Message>,
+) {
+    let mut interval = tokio::time::interval(Duration::from_millis(1000));
+    loop {
+        interval.tick().await;
+
+        // Refresh the address if it is dynamic
+        let mut server_address = server_address.lock().await;
+        server_address.refresh();
+
+        // Connect the WS
+        let (mut ws_tx, mut ws_rx) = match connect_async(server_address.url_ws()).await {
+            Ok((stream, _)) => stream,
+            Err(e) => {
+                warn!("Unable to connect to server");
+                debug!("Unable to connect to server with error {:?}", e);
+                continue;
+            }
+        }
+        .split();
+        info!(addr=%server_address.address(), "Connected to server");
+
+        let mut outbound = tokio::task::spawn({
+            let mut outbound_rx = outbound_rx.resubscribe();
+            async move {
+                loop {
+                    let Ok(message) = outbound_rx.recv().await else {
+                        error!("outbound_rx closed");
+                        break;
+                    };
+
+                    let Ok(message) = serde_json::to_string(&message) else {
+                        error!(message = ?message, "Unable to encode message");
+                        break;
+                    };
+
+                    info!(message = message, "Sending Message");
+
+                    ws_tx
+                        .send(tokio_tungstenite::tungstenite::Message::Text(message))
+                        .await;
+                }
+            }
+            .instrument(info_span!("outbound"))
+        });
+
+        let mut inbound = tokio::task::spawn({
+            let relay = relay.clone();
+            async move {
+                loop {
+                    let Some(message) = ws_rx.next().await else {
+                        continue;
+                    };
+
+                    let Ok(message) = message else {
+                        break;
+                    };
+
+                    let Ok(message) = serde_json::from_str::<Message>(&message.to_string()) else {
+                        error!(text = message.to_string(), "Unable to parse message");
+                        break;
+                    };
+
+                    relay
+                        .lock()
+                        .await
+                        .forward(message.destination.clone(), message);
+                }
+            }
+            .instrument(info_span!("inbound"))
+        });
+
+        select! {
+            _ = &mut outbound=> {
+                inbound.abort();
+            }
+            _ = &mut inbound=> {
+                outbound.abort();
+            }
+        }
+    }
 }
 
 #[instrument(skip_all, fields(address=%server_address.address(), machine=?id))]
-async fn relay(
+async fn manage_devices(
     AppState {
-        mut server_address,
+        server_address,
         id,
+        relay,
     }: AppState,
+    outbound_tx: broadcast::Sender<Message>,
 ) {
+    loop {}
+}
+
+#[instrument(skip_all, fields(address=%server_address.address(), machine=?id))]
+async fn relay(AppState { server_address, id }: AppState) {
     let (inbound_tx, inbound_rx) = mpsc::channel::<Message>(100);
     let (outbound_tx, _) = broadcast::channel::<Message>(100);
     let (pointcloud_tx, pointcloud_rx) = mpsc::channel::<Data>(100);
@@ -234,6 +356,7 @@ async fn inbound_handler(
                 error!("Received Unsupported Message");
             }
             message::MessageContent::DeregisterId(_, _) => todo!(),
+            message::MessageContent::Reboot => todo!(),
         }
     }
 }
