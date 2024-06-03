@@ -14,6 +14,8 @@ pub enum Destination {
     Global,
     /// Message for a specific machine
     Id(Id),
+    /// Messages intended for a relay host
+    Manager,
     /// Message for all sensors
     Sensor,
     /// Message for server
@@ -31,6 +33,7 @@ impl Display for Destination {
         match self {
             Destination::Global => write!(f, "global"),
             Destination::Id(id) => write!(f, "id({})", id),
+            Destination::Manager => write!(f, "manager"),
             Destination::Sensor => write!(f, "sensor"),
             Destination::Server => write!(f, "server"),
             Destination::Visualiser => write!(f, "visualiser"),

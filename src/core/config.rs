@@ -1,8 +1,8 @@
-use crate::sensors::{SensorConfig};
+use crate::{devices::DeviceConfig, sensors::SensorConfig};
 
 #[derive(PartialEq, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Configuration {
-    pub descriptors: Vec<SensorConfig>,
+    pub descriptors: Vec<DeviceConfig>,
 }
 
 impl Default for Configuration {

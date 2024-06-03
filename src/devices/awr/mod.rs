@@ -25,6 +25,7 @@ use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::sync::broadcast;
+use tokio::task::JoinHandle;
 use tracing::debug;
 use tracing::error;
 use tracing::info;
@@ -151,86 +152,87 @@ impl Device for Awr {
     }
 
     #[instrument]
-    async fn start(&mut self) {
-        let mut interval = tokio::time::interval(Duration::from_millis(1000));
-        let span = span!(
-            Level::INFO,
-            "sensor running",
-            descriptor = tracing::field::Empty,
-            error = tracing::field::Empty
-        );
-        let _enter = span.enter();
+    fn start(&mut self) -> JoinHandle<()> {
+        let mut self2 = std::mem::take(self);
+        tokio::task::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(1000));
+            let span = span!(
+                Level::INFO,
+                "sensor running",
+                descriptor = tracing::field::Empty,
+                error = tracing::field::Empty
+            );
+            let _enter = span.enter();
 
-        let mut descriptor = None;
-        loop {
-            interval.tick().await;
-
-            // set up the connection, according to our config
-            let descriptor = {
-                if let Some(new_descriptor) = self.descriptor_buffer.clone() {
-                    self.descriptor_buffer = None;
-                    descriptor = Some(new_descriptor.clone());
-                    span.record("descriptor", &tracing::field::debug(&descriptor));
-                    info!("Updated descriptor");
-                    new_descriptor
-                } else if let Some(new_descriptor) = descriptor.clone() {
-                    new_descriptor
-                } else {
-                    continue;
-                }
-            };
-
-            // Initialize the radar
-            let connection = match Connection::try_open(descriptor.serial, descriptor.model) {
-                Ok(connection) => connection,
-                Err(err) => {
-                    error!("Radar init error");
-                    debug!(err=?err, "Radar init error");
-                    // TODO this is where we might send a reboot message to parent
-                    // depending on the erorr of course
-                    continue;
-                }
-            };
-
-            let mut connection = match connection.send_command(descriptor.config) {
-                Err(e) => {
-                    span.record("error", &tracing::field::debug(&e));
-                    error!("Failed to send config to radar");
-                    continue;
-                }
-                Ok(connection) => connection,
-            };
-
+            let mut descriptor = None;
             loop {
-                let frame = match connection.read_frame() {
-                    Err(e) => {
-                        span.record("error", &tracing::field::debug(&e));
-                        error!("Failed to read from radar");
+                interval.tick().await;
+
+                // set up the connection, according to our config
+                let descriptor = {
+                    if let Some(new_descriptor) = self2.descriptor_buffer.clone() {
+                        self2.descriptor_buffer = None;
+                        descriptor = Some(new_descriptor.clone());
+                        span.record("descriptor", &tracing::field::debug(&descriptor));
+                        info!("Updated descriptor");
+                        new_descriptor
+                    } else if let Some(new_descriptor) = descriptor.clone() {
+                        new_descriptor
+                    } else {
                         continue;
                     }
-                    Ok(frame) => frame,
                 };
 
-                let r = self.outbound.send(Message {
-                    content: crate::core::message::MessageContent::DataMessage(Data::PointCloud(
-                        frame.into_point_cloud(),
-                    )),
-                    destination: HashSet::from([Destination::Visualiser]),
-                    timestamp: chrono::Utc::now(),
-                });
-
-                match r {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!(error=?e, "awr device outbound channel closed, this should be impossible");
-                        panic!("awr device outbound channel closed");
+                // Initialize the radar
+                let connection = match Connection::try_open(descriptor.serial, descriptor.model) {
+                    Ok(connection) => connection,
+                    Err(err) => {
+                        error!("Radar init error");
+                        debug!(err=?err, "Radar init error");
+                        // TODO this is where we might send a reboot message to parent
+                        // depending on the erorr of course
+                        continue;
                     }
                 };
-            }
-        }
-    }
 
-    async fn kill(&mut self) {}
+                let mut connection = match connection.send_command(descriptor.config) {
+                    Err(e) => {
+                        span.record("error", &tracing::field::debug(&e));
+                        error!("Failed to send config to radar");
+                        continue;
+                    }
+                    Ok(connection) => connection,
+                };
+
+                loop {
+                    let frame = match connection.read_frame() {
+                        Err(e) => {
+                            span.record("error", &tracing::field::debug(&e));
+                            error!("Failed to read from radar");
+                            continue;
+                        }
+                        Ok(frame) => frame,
+                    };
+
+                    let r = self2.outbound.send(Message {
+                        content: crate::core::message::MessageContent::DataMessage(
+                            Data::PointCloud(frame.into_point_cloud()),
+                        ),
+                        destination: HashSet::from([Destination::Visualiser]),
+                        timestamp: chrono::Utc::now(),
+                    });
+
+                    match r {
+                        Ok(_) => {}
+                        Err(e) => {
+                            error!(error=?e, "awr device outbound channel closed, this should be impossible");
+                            panic!("awr device outbound channel closed");
+                        }
+                    };
+                }
+            }
+        })
+    }
 
     // fn try_read(&mut self) -> Result<Data, SensorReadError> {
     //     match self.read_frame() {

@@ -5,11 +5,10 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::hash::Hash;
-use tokio::sync::broadcast;
+use tokio::{sync::broadcast, task::JoinHandle};
 
 use self::awr::{Awr, AwrDescriptor};
 
-#[async_trait]
 pub trait Device: Send {
     fn channel(&mut self) -> (broadcast::Sender<Message>, broadcast::Receiver<Message>);
 
@@ -17,9 +16,7 @@ pub trait Device: Send {
 
     fn destinations(&mut self) -> HashSet<Destination>;
 
-    async fn start(&mut self);
-
-    async fn kill(&mut self);
+    fn start(&mut self) -> JoinHandle<()>;
 }
 
 #[derive(PartialEq, Serialize, Deserialize, Debug, Clone)]

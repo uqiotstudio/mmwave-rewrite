@@ -6,7 +6,7 @@ use searchlight::{
     dns::rr::RData,
     net::IpVersion,
 };
-use tracing::{info, info_span, instrument, warn};
+use tracing::{debug, info, info_span, instrument, warn};
 
 use crate::args::Args;
 
@@ -36,14 +36,14 @@ impl ServerAddress {
         Self { address, is_fixed }
     }
 
-    #[instrument]
+    #[instrument(fields(self = %self.address()))]
     pub async fn refresh(&mut self) {
         if self.is_fixed {
             warn!("Address is fixed, no action taken.");
         } else {
             self.address = discover_service().await;
         };
-        dbg!(self.address);
+        debug!(address=?self.address);
     }
 
     pub fn address(&self) -> SocketAddr {
@@ -99,7 +99,7 @@ async fn discover_service() -> SocketAddr {
                         found_tx.send(addr);
                         return;
                     } else {
-                        warn!("The server does not use ipv4");
+                        warn!("The server should use ipv4");
                     }
                 }
             }
