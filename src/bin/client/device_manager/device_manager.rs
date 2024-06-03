@@ -128,6 +128,21 @@ async fn manage_connection(
         .split();
         info!(addr=%server_address.address(), "Connected to server");
 
+        // Let the server know we exist
+        let _ = ws_tx
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                serde_json::to_string(&Message {
+                    content: MessageContent::RegisterId(
+                        HashSet::from([id]),
+                        HashSet::from([Destination::Id(id), Destination::Manager]),
+                    ),
+                    destination: HashSet::from([Destination::Server]),
+                    timestamp: chrono::Utc::now(),
+                })
+                .expect("this should serialize fine"),
+            ))
+            .await;
+
         let mut outbound = tokio::task::spawn({
             let address = server_address.address().clone();
             let outbound_rx = outbound_rx.clone();
@@ -221,16 +236,6 @@ async fn manage_devices(
 
     let mut rx = relay.lock().await.subscribe(id);
 
-    // Let the server know we exist
-    let _ = outbound_tx.send(Message {
-        content: MessageContent::RegisterId(
-            HashSet::from([id]),
-            HashSet::from([Destination::Id(id), Destination::Manager]),
-        ),
-        destination: HashSet::from([Destination::Server]),
-        timestamp: chrono::Utc::now(),
-    });
-
     // request a new config initially and then once every interval
     let mut interval = tokio::time::interval(Duration::from_secs(60));
     tokio::task::spawn({
@@ -255,8 +260,10 @@ async fn manage_devices(
     });
 
     while let Ok(message) = rx.recv().await {
+        info!(message=?message, "Received message");
         match message.content {
             message::MessageContent::ConfigMessage(config) => {
+                info!(config=?config, "Config Message Received");
                 // go through the config devices.
                 let mut keep = HashSet::new();
                 for desc in config.descriptors {
