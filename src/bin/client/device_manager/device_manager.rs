@@ -3,36 +3,34 @@ mod args;
 
 use crate::{address::ServerAddress, args::Args};
 use clap::Parser;
-use futures_util::{FutureExt, SinkExt, StreamExt};
+use futures_util::{
+    stream::{SplitSink, SplitStream},
+    SinkExt, StreamExt,
+};
 use indicatif::ProgressStyle;
 use mmwave::{
     core::{
         config::Configuration,
-        data::Data,
-        message::{self, Destination, Id, Message, MessageContent},
-        pointcloud::IntoPointCloud,
+        message::{Destination, Id, Message, MessageContent},
         relay::Relay,
-        transform::Transform,
     },
-    devices::Device,
+    devices::DeviceConfig,
 };
 use serde_json::{self};
 use std::{
     collections::{HashMap, HashSet},
-    ops::{AddAssign, MulAssign},
     panic,
     sync::Arc,
     time::Duration,
 };
-use tokio::{select, sync::oneshot::Receiver};
+use tokio::{net::TcpStream, select};
 use tokio::{
-    sync::{broadcast, mpsc, oneshot, Mutex},
+    sync::{broadcast, Mutex},
     task::JoinHandle,
 };
-use tokio_tungstenite::connect_async;
-use tracing::{
-    debug, error, info, info_span, instrument, level_filters::LevelFilter, warn, Instrument,
-};
+use tokio_tungstenite::{connect_async, MaybeTlsStream};
+use tracing::{debug, error, info, warn, Instrument};
+use tracing::{info_span, instrument};
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -60,16 +58,14 @@ async fn main() {
         relay: Arc::new(Mutex::new(Relay::new())),
     };
 
-    // messages produced by devices are sent to tx, and then forwarded to the websocket
     let (outbound_tx, outbound_rx) = broadcast::channel::<Message>(100);
 
-    // This should never end, ideally
     let mut t1 = tokio::task::spawn(manage_devices(app_state.clone(), outbound_tx));
     let mut t2 = tokio::task::spawn(manage_connection(app_state.clone(), outbound_rx));
 
     select! {
-        _ = &mut t1 => {t2.abort(); }
-        _ = &mut t2 => {t1.abort(); }
+        _ = &mut t1 => { t2.abort(); }
+        _ = &mut t2 => { t1.abort(); }
     };
     error!("task aborted, this is unrecoverable");
 }
@@ -99,24 +95,20 @@ fn set_panic_hook() {
     }));
 }
 
-#[instrument(skip_all, fields(address=%server_address.address(), machine=?id))]
-async fn manage_connection(
-    AppState {
+#[instrument(skip_all, fields(address=%app_state.server_address.address(), machine=?app_state.id))]
+async fn manage_connection(app_state: AppState, outbound_rx: broadcast::Receiver<Message>) {
+    let AppState {
         mut server_address,
         id,
         relay,
-    }: AppState,
-    outbound_rx: broadcast::Receiver<Message>,
-) {
+    } = app_state;
     let outbound_rx = Arc::new(Mutex::new(outbound_rx));
     let mut interval = tokio::time::interval(Duration::from_millis(1000));
+
     loop {
         interval.tick().await;
-
-        // Refresh the address if it is dynamic
         server_address.refresh().await;
 
-        // Connect the WS
         let (mut ws_tx, mut ws_rx) = match connect_async(server_address.url_ws()).await {
             Ok((stream, _)) => stream,
             Err(e) => {
@@ -128,8 +120,7 @@ async fn manage_connection(
         .split();
         info!(addr=%server_address.address(), "Connected to server");
 
-        // Let the server know we exist
-        let _ = ws_tx
+        if let Err(e) = ws_tx
             .send(tokio_tungstenite::tungstenite::Message::Text(
                 serde_json::to_string(&Message {
                     content: MessageContent::RegisterId(
@@ -141,210 +132,211 @@ async fn manage_connection(
                 })
                 .expect("this should serialize fine"),
             ))
-            .await;
+            .await
+        {
+            error!("Failed to send register message: {:?}", e);
+            continue;
+        }
 
-        let mut outbound = tokio::task::spawn({
-            let address = server_address.address().clone();
-            let outbound_rx = outbound_rx.clone();
-            async move {
-                let mut outbound_rx = outbound_rx.lock().await;
-                info!("outbound loop started");
-                loop {
-                    let Ok(message) = outbound_rx.recv().await else {
-                        error!("outbound_rx closed");
-                        break;
-                    };
-
-                    let Ok(message) = serde_json::to_string(&message) else {
-                        error!(message = ?message, "Unable to encode message");
-                        break;
-                    };
-
-                    info!(message = message, destination = %address, "Sending Message");
-
-                    if let Err(e) = ws_tx
-                        .send(tokio_tungstenite::tungstenite::Message::Text(message))
-                        .await
-                    {
-                        error!("Unable to send message on websocket");
-                        debug!(error=?e, "Unable to send message on websocket")
-                    }
-                }
-            }
-            .instrument(info_span!("outbound"))
-        });
-
-        let mut inbound = tokio::task::spawn({
-            let relay = relay.clone();
-            async move {
-                info!("inbound loop started");
-                loop {
-                    let Some(message) = ws_rx.next().await else {
-                        continue;
-                    };
-
-                    let message = match message {
-                        Ok(message) => message,
-                        Err(e) => {
-                            error!("Unable to receive from websocket");
-                            debug!(error=?e, "Unable to receive from websocket");
-                            break;
-                        }
-                    };
-
-                    let Ok(message) = serde_json::from_str::<Message>(&message.to_string()) else {
-                        error!(text = message.to_string(), "Unable to parse message");
-                        break;
-                    };
-
-                    relay
-                        .lock()
-                        .await
-                        .forward(message.destination.clone(), message);
-                }
-            }
-            .instrument(info_span!("inbound"))
-        });
+        let mut outbound_task = tokio::task::spawn(
+            outbound_loop(outbound_rx.clone(), ws_tx).instrument(tracing::Span::current()),
+        );
+        let mut inbound_task = tokio::task::spawn(
+            inbound_loop(ws_rx, relay.clone()).instrument(tracing::Span::current()),
+        );
 
         select! {
-            _ = &mut outbound=> {
-                inbound.abort();
-            }
-            _ = &mut inbound=> {
-                outbound.abort();
-            }
+            _ = (&mut outbound_task) => { inbound_task.abort(); }
+            _ = (&mut inbound_task) => { outbound_task.abort(); }
         }
         warn!("websocket connection was closed, is this intentional?");
     }
 }
 
-#[instrument(skip_all, fields(machine=?id))]
-async fn manage_devices(
-    AppState {
+#[instrument(skip_all)]
+async fn outbound_loop(
+    outbound_rx: Arc<Mutex<broadcast::Receiver<Message>>>,
+    mut ws_tx: SplitSink<
+        tokio_tungstenite::WebSocketStream<MaybeTlsStream<TcpStream>>,
+        tokio_tungstenite::tungstenite::Message,
+    >,
+) {
+    info!("outbound loop started");
+    while let Ok(message) = outbound_rx.lock().await.recv().await {
+        if let Ok(message) = serde_json::to_string(&message) {
+            info!(message = message, "Sending Message");
+            if let Err(e) = ws_tx
+                .send(tokio_tungstenite::tungstenite::Message::Text(message))
+                .await
+            {
+                error!("Unable to send message on websocket: {:?}", e);
+                break;
+            }
+        } else {
+            error!("Unable to encode message: {:?}", message);
+            break;
+        }
+    }
+    error!("outbound_rx closed");
+}
+
+#[instrument(skip_all)]
+async fn inbound_loop(
+    mut ws_rx: SplitStream<tokio_tungstenite::WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    relay: Arc<Mutex<Relay<Message>>>,
+) {
+    info!("inbound loop started");
+    while let Some(message) = ws_rx.next().await {
+        match message {
+            Ok(message) => {
+                if let Ok(message) = serde_json::from_str::<Message>(&message.to_string()) {
+                    relay
+                        .lock()
+                        .await
+                        .forward(message.destination.clone(), message);
+                } else {
+                    error!("Unable to parse message: {:?}", message);
+                    break;
+                }
+            }
+            Err(e) => {
+                error!("Unable to receive from websocket: {:?}", e);
+                break;
+            }
+        }
+    }
+}
+
+#[instrument(skip_all, fields(machine=?app_state.id))]
+async fn manage_devices(app_state: AppState, outbound_tx: broadcast::Sender<Message>) {
+    let AppState {
         server_address: _,
         id,
         relay,
-    }: AppState,
-    outbound_tx: broadcast::Sender<Message>,
-) {
-    // Register this manager to listen for messages meant for it
-    relay.lock().await.register(id, Destination::Id(id));
-    // We also want to listen for anything directed at all managers
-    relay.lock().await.register(id, Destination::Manager);
-
+    } = app_state;
     let mut tasks: HashMap<Id, JoinHandle<()>> = HashMap::new();
-
     let mut rx = relay.lock().await.subscribe(id);
 
-    // request a new config initially and then once every interval
+    relay.lock().await.register(id, Destination::Id(id));
+    relay.lock().await.register(id, Destination::Manager);
+
     let mut interval = tokio::time::interval(Duration::from_secs(60));
-    tokio::task::spawn({
-        let outbound_tx = outbound_tx.clone();
-        async move {
-            interval.reset();
-            loop {
-                info!("requesting config refresh from server");
-                if let Err(e) = outbound_tx.send(Message {
-                    content: message::MessageContent::ConfigRequest(Destination::Id(id)),
-                    destination: HashSet::from([Destination::Server]),
-                    timestamp: chrono::Utc::now(),
-                }) {
-                    error!("failed to send config message");
-                    debug!(error=?e, "failed to send config message");
-                    panic!("fialed to send config message");
-                }
-                interval.tick().await;
-            }
-        }
-        .instrument(info_span!("config polling"))
-    });
+    tokio::task::spawn(request_config_loop(outbound_tx.clone(), id, interval));
 
     while let Ok(message) = rx.recv().await {
         info!(message=?message, "Received message");
         match message.content {
-            message::MessageContent::ConfigMessage(config) => {
-                info!(config=?config, "Config Message Received");
-                // go through the config devices.
-                let mut keep = HashSet::new();
-                for desc in config.descriptors {
-                    let id = match desc.id {
-                        Id::Device(m, d) => {
-                            if Id::Machine(m) == id {
-                                Id::Device(m, d)
-                            } else {
-                                continue;
-                            }
-                        }
-                        other => continue,
-                    };
-                    // spawn those that dont exist, and reconfigure all
-                    keep.insert(id);
-                    let mut relay = relay.lock().await;
-                    // if the device doesnt have a task, create it!
-                    tasks.entry(id).or_insert(tokio::task::spawn({
-                        let mut dev = desc.init();
-                        let (dev_tx, mut dev_rx) = dev.channel();
-                        dev.configure(desc);
-
-                        for destination in dev.destinations() {
-                            relay.register(id, destination);
-                        }
-                        let mut rx = relay.subscribe(id);
-                        let outbound_tx = outbound_tx.clone();
-                        let mut dev = dev.start();
-                        async move {
-                            let mut t1 = tokio::task::spawn(async move {
-                                info!(device=?id, "started forwarding from relay to device");
-                                while let Ok(message) = rx.recv().await {
-                                    dev_tx.send(message);
-                                }
-                                error!("forwarding from relay to device failed");
-                            });
-                            let mut t2 = tokio::task::spawn(
-                                async move {
-                                    info!(device=?id, "started forwarding from device to ws");
-                                    while let Ok(message) = dev_rx.recv().await {
-                                        outbound_tx.send(message);
-                                    }
-                                    error!("forwarding from device to ws failed");
-                                }
-                                .instrument(info_span!("im helpful, right?")),
-                            );
-                            select! {
-                                _ = &mut t1 => {
-                                    t2.abort();
-                                    dev.abort();
-                                }
-                                _ = &mut t2 => {
-                                    t1.abort();
-                                    dev.abort();
-                                }
-                                _ = &mut dev => {
-                                    t1.abort();
-                                    t2.abort();
-                                }
-                            }
-                        }
-                        .instrument(info_span!("device connection"))
-                    }));
-                }
-
-                // Kill any that are not being kept
-                let keys: Vec<_> = tasks.keys().cloned().collect();
-                for id in keys {
-                    if !keep.contains(&id) {
-                        tasks.remove(&id).map(|popped| popped.abort());
-                    }
-                    info!(id=?id,"removed device");
-                }
+            MessageContent::ConfigMessage(config) => {
+                handle_config_message(config, id, relay.clone(), &mut tasks, &outbound_tx).await
             }
-            message::MessageContent::Reboot => todo!(),
-            message => {
-                error!(message = %message, "Received unsupported message");
-            }
+            MessageContent::Reboot => todo!(),
+            message => error!(message = %message, "Received unsupported message"),
         }
     }
     error!("relay subscription closed unexpectedly");
+}
+
+#[instrument(skip_all)]
+async fn request_config_loop(
+    outbound_tx: broadcast::Sender<Message>,
+    id: Id,
+    mut interval: tokio::time::Interval,
+) {
+    interval.reset();
+    loop {
+        info!("requesting config refresh from server");
+        if let Err(e) = outbound_tx.send(Message {
+            content: MessageContent::ConfigRequest(Destination::Id(id)),
+            destination: HashSet::from([Destination::Server]),
+            timestamp: chrono::Utc::now(),
+        }) {
+            error!("failed to send config message: {:?}", e);
+            panic!("failed to send config message");
+        }
+        interval.tick().await;
+    }
+}
+
+#[instrument(skip_all)]
+async fn handle_config_message(
+    config: Configuration,
+    id: Id,
+    relay: Arc<Mutex<Relay<Message>>>,
+    tasks: &mut HashMap<Id, JoinHandle<()>>,
+    outbound_tx: &broadcast::Sender<Message>,
+) {
+    let mut keep = HashSet::new();
+    for desc in config.descriptors {
+        let id = match desc.id {
+            Id::Device(m, d) if Id::Machine(m) == id => Id::Device(m, d),
+            _ => continue,
+        };
+        keep.insert(id);
+        tasks.entry(id).or_insert(tokio::task::spawn(handle_device(
+            desc,
+            id,
+            relay.clone(),
+            outbound_tx.clone(),
+        )));
+    }
+
+    for id in tasks.keys().cloned().collect::<Vec<_>>() {
+        if !keep.contains(&id) {
+            tasks.remove(&id).map(|popped| popped.abort());
+            info!(id=?id, "removed device");
+        }
+    }
+}
+
+#[instrument(skip_all)]
+async fn handle_device(
+    desc: DeviceConfig,
+    id: Id,
+    relay: Arc<Mutex<Relay<Message>>>,
+    outbound_tx: broadcast::Sender<Message>,
+) {
+    let mut dev = desc.init();
+    let (dev_tx, mut dev_rx) = dev.channel();
+    dev.configure(desc);
+
+    for destination in dev.destinations() {
+        relay.lock().await.register(id, destination);
+    }
+    let mut rx = relay.lock().await.subscribe(id);
+    let mut dev = dev.start();
+
+    let mut t1 = tokio::task::spawn(forward_messages_to_device(rx, dev_tx));
+    let mut t2 = tokio::task::spawn(forward_messages_to_ws(dev_rx, outbound_tx.clone()));
+
+    select! {
+        _ = &mut t1 => { t2.abort(); dev.abort(); }
+        _ = &mut t2 => { t1.abort(); dev.abort(); }
+        _ = &mut dev => { t1.abort(); t2.abort(); }
+    }
+}
+
+#[instrument(skip_all)]
+async fn forward_messages_to_device(
+    mut rx: broadcast::Receiver<Message>,
+    mut dev_tx: broadcast::Sender<Message>,
+) {
+    info!("started forwarding from relay to device");
+    while let Ok(message) = rx.recv().await {
+        dev_tx.send(message).unwrap();
+    }
+    error!("forwarding from relay to device failed");
+}
+
+#[instrument(skip_all)]
+async fn forward_messages_to_ws(
+    mut dev_rx: broadcast::Receiver<Message>,
+    outbound_tx: broadcast::Sender<Message>,
+) {
+    info!("started forwarding from device to ws");
+    while let Ok(message) = dev_rx.recv().await {
+        outbound_tx.send(message).unwrap();
+    }
+    error!("forwarding from device to ws failed");
 }
 
 // #[instrument(skip_all, fields(address=%server_address.address(), machine=?id))]
