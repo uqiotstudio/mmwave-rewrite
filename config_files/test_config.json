@@ -1,8 +1,24 @@
 {
   "descriptors": [
+        {
+        "id": {           
+          "Device": [1, 1]
+        },
+        "device_descriptor": {
+            "AWR": {
+                "serial": "00E23E8E",
+                "model": "AWR1843AOP",
+                "config_path": "./config_files/profile_AWR1843_AOP.cfg",
+                "transform": {
+                    "translation": [0, 0, 1],
+                    "orientation": [3.15, 0]
+                }
+            }
+        }
+    },
     {
       "id": {
-        "Device":[1,1]
+        "Device": [2,1]
       },
       "device_descriptor": {
         "AWR": {
