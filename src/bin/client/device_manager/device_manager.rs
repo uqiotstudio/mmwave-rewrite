@@ -164,7 +164,6 @@ async fn outbound_loop(
     info!("outbound loop started");
     while let Ok(message) = outbound_rx.lock().await.recv().await {
         if let Ok(message) = serde_json::to_string(&message) {
-            info!(message = message, "Sending Message");
             if let Err(e) = ws_tx
                 .send(tokio_tungstenite::tungstenite::Message::Text(message))
                 .await
@@ -220,7 +219,7 @@ async fn manage_devices(app_state: AppState, outbound_tx: broadcast::Sender<Mess
     relay.lock().await.register(id, Destination::Id(id));
     relay.lock().await.register(id, Destination::Manager);
 
-    let mut interval = tokio::time::interval(Duration::from_secs(60));
+    let mut interval = tokio::time::interval(Duration::from_secs(10));
     tokio::task::spawn(request_config_loop(outbound_tx.clone(), id, interval));
 
     while let Ok(message) = rx.recv().await {
@@ -266,18 +265,28 @@ async fn handle_config_message(
     outbound_tx: &broadcast::Sender<Message>,
 ) {
     let mut keep = HashSet::new();
-    for desc in config.descriptors {
+    for desc in config.clone().descriptors {
         let id = match desc.id {
             Id::Device(m, d) if Id::Machine(m) == id => Id::Device(m, d),
             _ => continue,
         };
         keep.insert(id);
-        tasks.entry(id).or_insert(tokio::task::spawn(handle_device(
-            desc,
-            id,
-            relay.clone(),
-            outbound_tx.clone(),
-        )));
+        if !tasks.contains_key(&id) {
+            tasks.insert(
+                id,
+                tokio::task::spawn(handle_device(desc, id, relay.clone(), outbound_tx.clone())),
+            );
+        } else {
+            // send an update config through to said device
+            relay.lock().await.forward(
+                HashSet::from([Destination::Id(id)]),
+                Message {
+                    content: MessageContent::ConfigMessage(config.clone()),
+                    destination: HashSet::from([Destination::Id(id)]),
+                    timestamp: chrono::Utc::now(),
+                },
+            )
+        }
     }
 
     for id in tasks.keys().cloned().collect::<Vec<_>>() {
@@ -299,10 +308,20 @@ async fn handle_device(
     let (dev_tx, dev_rx) = dev.channel();
     dev.configure(desc);
 
+    let _ = outbound_tx.send(Message {
+        content: MessageContent::RegisterId(
+            HashSet::from([id]),
+            HashSet::from([Destination::Id(id)]),
+        ),
+        destination: HashSet::from([Destination::Server]),
+        timestamp: chrono::Utc::now(),
+    });
+
+    relay.lock().await.register(id, Destination::Id(id));
     for destination in dev.destinations() {
         relay.lock().await.register(id, destination);
     }
-    let mut rx = relay.lock().await.subscribe(id);
+    let rx = relay.lock().await.subscribe(id);
     let mut dev = dev.start();
 
     let mut t1 = tokio::task::spawn(
@@ -322,11 +341,13 @@ async fn handle_device(
 #[instrument(skip_all)]
 async fn forward_messages_to_device(
     mut rx: broadcast::Receiver<Message>,
-    mut dev_tx: broadcast::Sender<Message>,
+    dev_tx: broadcast::Sender<Message>,
 ) {
     info!("started forwarding from relay to device");
     while let Ok(message) = rx.recv().await {
-        dev_tx.send(message).unwrap();
+        dev_tx
+            .send(message)
+            .expect("unable to send message to dev_tx, was it closed?");
     }
     error!("forwarding from relay to device failed");
 }
@@ -338,7 +359,6 @@ async fn forward_messages_to_ws(
 ) {
     info!("started forwarding from device to ws");
     while let Ok(message) = dev_rx.recv().await {
-        info!("message sent");
         outbound_tx.send(message).unwrap();
     }
     error!("forwarding from device to ws failed");

@@ -32,6 +32,7 @@ use tracing::info;
 use tracing::instrument;
 use tracing::span;
 use tracing::warn;
+use tracing::Instrument;
 use tracing::Level;
 
 #[derive(
@@ -139,10 +140,7 @@ impl Device for Awr {
 
         span.record("config", &tracing::field::debug(&config));
 
-        let DeviceDescriptor::AWR(descriptor) = config.device_descriptor else {
-            error!("Received invalid config (required DeviceDescriptor::AWR)");
-            return;
-        };
+        let DeviceDescriptor::AWR(descriptor) = config.device_descriptor;
         self.id = Some(config.id);
         self.descriptor_buffer = Some(descriptor);
     }
@@ -151,7 +149,7 @@ impl Device for Awr {
         HashSet::from([Destination::Sensor])
     }
 
-    #[instrument]
+    #[instrument(skip_all)]
     fn start(&mut self) -> JoinHandle<()> {
         let mut self2 = std::mem::take(self);
         tokio::task::spawn(async move {
@@ -160,9 +158,13 @@ impl Device for Awr {
             let _enter = span.enter();
 
             let mut descriptor = None;
+            let mut inbound_rx = self2.inbound.subscribe();
+
             loop {
                 interval.tick().await;
 
+                inbound_rx.recv();
+            
                 // set up the connection, according to our config
                 let descriptor = {
                     if let Some(new_descriptor) = self2.descriptor_buffer.clone() {
@@ -228,7 +230,7 @@ impl Device for Awr {
                     };
                 }
             }
-        })
+        }.instrument(tracing::Span::current()))
     }
 
     // fn try_read(&mut self) -> Result<Data, SensorReadError> {
