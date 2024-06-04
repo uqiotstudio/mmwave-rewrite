@@ -21,6 +21,8 @@ use serde::Deserialize;
 use serde::Deserializer;
 use std::collections::HashSet;
 use std::fmt::Display;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -133,7 +135,7 @@ impl Device for Awr {
         (self.inbound.clone(), self.outbound.subscribe())
     }
 
-    #[instrument]
+    #[instrument(skip_all)]
     fn configure(&mut self, config: DeviceConfig) {
         let span = span!(Level::INFO, "configure", config = tracing::field::Empty);
         let _enter = span.enter();
@@ -143,6 +145,7 @@ impl Device for Awr {
         let DeviceDescriptor::AWR(descriptor) = config.device_descriptor;
         self.id = Some(config.id);
         self.descriptor_buffer = Some(descriptor);
+        info!("Reconfigured device");
     }
 
     fn destinations(&mut self) -> HashSet<Destination> {
@@ -151,22 +154,49 @@ impl Device for Awr {
 
     #[instrument(skip_all)]
     fn start(&mut self) -> JoinHandle<()> {
-        let mut self2 = std::mem::take(self);
-        tokio::task::spawn(async move {
+        let self2 = Arc::new(Mutex::new(std::mem::take(self)));
+        tokio::task::spawn({
+            let self2 = self2.clone();
+            async move {
             let mut interval = tokio::time::interval(Duration::from_millis(1000));
             let span = span!(Level::INFO, "sensor running",);
             let _enter = span.enter();
 
             let mut descriptor = None;
-            let mut inbound_rx = self2.inbound.subscribe();
+            let mut inbound_rx = self2.lock().await.inbound.subscribe();
+
+            tokio::task::spawn({
+                let self2 = self2.clone();
+                let id = self2.lock().await.id.clone();
+                async move {
+                    while let Ok(message) = inbound_rx.recv().await {
+                        match message.content {
+                            crate::core::message::MessageContent::DataMessage(_) => todo!(),
+                            crate::core::message::MessageContent::ConfigMessage(config) => {
+                                for desc in config.descriptors {
+                                    if Some(desc.id) == id {
+                                        let mut self2 = self2.lock().await;
+                                        self2.configure(desc);
+                                    }
+                                }
+                            },
+                            crate::core::message::MessageContent::ConfigRequest(_) => todo!(),
+                            crate::core::message::MessageContent::RegisterId(_, _) => todo!(),
+                            crate::core::message::MessageContent::DeregisterId(_, _) => todo!(),
+                            crate::core::message::MessageContent::Reboot => todo!(),
+                            
+                        }
+                    }
+                }
+            });
+            
 
             loop {
                 interval.tick().await;
 
-                inbound_rx.recv();
-            
                 // set up the connection, according to our config
                 let descriptor = {
+                    let mut self2 = self2.lock().await;
                     if let Some(new_descriptor) = self2.descriptor_buffer.clone() {
                         self2.descriptor_buffer = None;
                         descriptor = Some(new_descriptor.clone());
@@ -219,7 +249,7 @@ impl Device for Awr {
                         timestamp: chrono::Utc::now(),
                     };
 
-                    let r = self2.outbound.send(message);
+                    let r = self2.lock().await.outbound.send(message);
 
                     match r {
                         Ok(_) => {}
@@ -230,7 +260,7 @@ impl Device for Awr {
                     };
                 }
             }
-        }.instrument(tracing::Span::current()))
+        }.instrument(tracing::Span::current())})
     }
 
     // fn try_read(&mut self) -> Result<Data, SensorReadError> {
