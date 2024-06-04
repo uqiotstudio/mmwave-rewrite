@@ -296,7 +296,7 @@ async fn handle_device(
     outbound_tx: broadcast::Sender<Message>,
 ) {
     let mut dev = desc.init();
-    let (dev_tx, mut dev_rx) = dev.channel();
+    let (dev_tx, dev_rx) = dev.channel();
     dev.configure(desc);
 
     for destination in dev.destinations() {
@@ -305,8 +305,12 @@ async fn handle_device(
     let mut rx = relay.lock().await.subscribe(id);
     let mut dev = dev.start();
 
-    let mut t1 = tokio::task::spawn(forward_messages_to_device(rx, dev_tx));
-    let mut t2 = tokio::task::spawn(forward_messages_to_ws(dev_rx, outbound_tx.clone()));
+    let mut t1 = tokio::task::spawn(
+        forward_messages_to_device(rx, dev_tx).instrument(tracing::Span::current()),
+    );
+    let mut t2 = tokio::task::spawn(
+        forward_messages_to_ws(dev_rx, outbound_tx.clone()).instrument(tracing::Span::current()),
+    );
 
     select! {
         _ = &mut t1 => { t2.abort(); dev.abort(); }
@@ -334,6 +338,7 @@ async fn forward_messages_to_ws(
 ) {
     info!("started forwarding from device to ws");
     while let Ok(message) = dev_rx.recv().await {
+        info!("message sent");
         outbound_tx.send(message).unwrap();
     }
     error!("forwarding from device to ws failed");

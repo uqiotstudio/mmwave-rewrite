@@ -8,11 +8,14 @@ use chrono::Utc;
 use clap::Parser;
 use futures_util::{stream::SplitStream, SinkExt, StreamExt};
 use indicatif::ProgressStyle;
-use mmwave::core::{
-    config::Configuration,
-    message::{Destination, Message},
-};
 use mmwave::core::{message::Id, relay::Relay};
+use mmwave::{
+    core::{
+        config::Configuration,
+        message::{Destination, Message},
+    },
+    devices::{awr::Model, DeviceConfig},
+};
 use searchlight::broadcast::{BroadcasterBuilder, ServiceBuilder};
 use std::{
     collections::HashSet,
@@ -36,6 +39,10 @@ pub struct Args {
     /// Whether to enable debug logging
     #[arg(short, long, default_value_t = false)]
     pub debug: bool,
+
+    /// The path to a config, optional
+    #[arg(short, long)]
+    pub config_path: Option<String>,
 }
 
 #[derive(Clone)]
@@ -57,7 +64,11 @@ impl Display for TraceableMessage {
 
 #[tokio::main]
 async fn main() {
-    let Args { port, debug } = Args::parse();
+    let Args {
+        port,
+        debug,
+        config_path,
+    } = Args::parse();
 
     setup_logging(debug);
     set_panic_hook();
@@ -67,7 +78,28 @@ async fn main() {
         relay: relay.clone(),
     };
 
-    tokio::spawn(register_server(relay.clone()));
+    let mut config = Arc::new(Mutex::new(Configuration::default()));
+    if let Some(config_path) = config_path.clone() {
+        match std::fs::read_to_string(config_path) {
+            Ok(contents) => match serde_json::from_str::<Configuration>(&contents) {
+                Ok(parsed) => {
+                    config = Arc::new(Mutex::new(parsed));
+                }
+                Err(e) => {
+                    error!(error=?e, "failed to parse config");
+                    panic!("failed to parse config");
+                }
+            },
+            Err(e) => {
+                error!(error=?e, "config path must be valid");
+                panic!("config path must be valid");
+            }
+        };
+    };
+
+    info!(config=?config.lock().await, path=?config_path, "Initial config loaded");
+
+    tokio::spawn(register_server(relay.clone(), config));
 
     tokio::spawn(broadcast_mdns_service(port));
 
@@ -121,7 +153,10 @@ fn set_panic_hook() {
 ///
 /// * `relay` - An `Arc<Mutex<Relay<Message>>>` containing the relay for message forwarding.
 #[instrument(skip(relay))]
-async fn register_server(relay: Arc<Mutex<Relay<TraceableMessage>>>) {
+async fn register_server(
+    relay: Arc<Mutex<Relay<TraceableMessage>>>,
+    config: Arc<Mutex<Configuration>>,
+) {
     let mut server_rx = {
         let mut relay = relay.lock().await;
         relay.register(Id::Machine(0), Destination::Server);
@@ -141,7 +176,7 @@ async fn register_server(relay: Arc<Mutex<Relay<TraceableMessage>>>) {
                 mmwave::core::message::MessageContent::ConfigRequest(ref destination) => {
                     let config_message = Message {
                         content: mmwave::core::message::MessageContent::ConfigMessage(
-                            Configuration::default(),
+                            config.lock().await.clone(),
                         ),
                         destination: HashSet::from([destination.clone()]),
                         timestamp: Utc::now(),

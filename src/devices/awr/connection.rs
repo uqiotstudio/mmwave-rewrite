@@ -6,6 +6,7 @@ use super::{
 use regex::Regex;
 use serialport::SerialPort;
 use std::{error::Error, thread, time};
+use tracing::{debug, info, instrument, warn};
 
 #[derive(Debug)]
 pub struct PortDescriptor {
@@ -30,6 +31,7 @@ pub struct Connection {
 }
 
 impl Connection {
+    #[instrument]
     pub fn try_open(serial: String, model: Model) -> Result<Self, RadarInitError> {
         // Attempt to open the two serial devices
 
@@ -50,6 +52,7 @@ impl Connection {
                         else {
                             continue;
                         };
+                        info!(devname=%devname, "found AWR1843Boost matching serial");
                         if !regex.is_match(devname) {
                             // Irelevant
                             continue;
@@ -72,6 +75,7 @@ impl Connection {
                     Model::AWR1843AOP => {
                         // For AWR1843Boost, the first ttyACMX is cli, second is data
                         let regex = Regex::new(r"^/dev/ttyUSB\d+$").unwrap();
+                        warn!(dname=?device.property_value("DEVNAME"), "device found");
                         let Some(Some(devname)) =
                             device.property_value("DEVNAME").map(|x| x.to_str())
                         else {
@@ -81,6 +85,8 @@ impl Connection {
                             // Irelevant
                             continue;
                         }
+
+                        info!(devname=%devname, "found AWR1843Aop matching serial");
                         // The cli_port comes first, so this should be fine (I THINK)
                         // TODO possibly find a better way to do this, there are some distinguishing
                         // features in the attributes/properties to utilize
@@ -100,6 +106,7 @@ impl Connection {
             }
         }
 
+        info!(cli_port=?cli_port, data_port=?data_port);
         let (cli_port, data_port) = (
             cli_port.ok_or(RadarInitError::PortNotFound("CLI Port".to_owned()))?,
             data_port.ok_or(RadarInitError::PortNotFound("Data Port".to_owned()))?,

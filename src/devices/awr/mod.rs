@@ -156,12 +156,7 @@ impl Device for Awr {
         let mut self2 = std::mem::take(self);
         tokio::task::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(1000));
-            let span = span!(
-                Level::INFO,
-                "sensor running",
-                descriptor = tracing::field::Empty,
-                error = tracing::field::Empty
-            );
+            let span = span!(Level::INFO, "sensor running",);
             let _enter = span.enter();
 
             let mut descriptor = None;
@@ -173,7 +168,6 @@ impl Device for Awr {
                     if let Some(new_descriptor) = self2.descriptor_buffer.clone() {
                         self2.descriptor_buffer = None;
                         descriptor = Some(new_descriptor.clone());
-                        span.record("descriptor", &tracing::field::debug(&descriptor));
                         info!("Updated descriptor");
                         new_descriptor
                     } else if let Some(new_descriptor) = descriptor.clone() {
@@ -184,20 +178,20 @@ impl Device for Awr {
                 };
 
                 // Initialize the radar
-                let connection = match Connection::try_open(descriptor.serial, descriptor.model) {
-                    Ok(connection) => connection,
-                    Err(err) => {
-                        error!("Radar init error");
-                        debug!(err=?err, "Radar init error");
-                        // TODO this is where we might send a reboot message to parent
-                        // depending on the erorr of course
-                        continue;
-                    }
-                };
+                let connection =
+                    match Connection::try_open(descriptor.clone().serial, descriptor.model) {
+                        Ok(connection) => connection,
+                        Err(err) => {
+                            error!("Radar init error");
+                            debug!(err=?err, "Radar init error");
+                            // TODO this is where we might send a reboot message to parent
+                            // depending on the erorr of course
+                            continue;
+                        }
+                    };
 
                 let mut connection = match connection.send_command(descriptor.config) {
                     Err(e) => {
-                        span.record("error", &tracing::field::debug(&e));
                         error!("Failed to send config to radar");
                         continue;
                     }
@@ -205,22 +199,25 @@ impl Device for Awr {
                 };
 
                 loop {
+                    tokio::task::yield_now().await;
+
                     let frame = match connection.read_frame() {
                         Err(e) => {
-                            span.record("error", &tracing::field::debug(&e));
                             error!("Failed to read from radar");
                             continue;
                         }
                         Ok(frame) => frame,
                     };
 
-                    let r = self2.outbound.send(Message {
+                    let message = Message {
                         content: crate::core::message::MessageContent::DataMessage(
                             Data::PointCloud(frame.into_point_cloud()),
                         ),
                         destination: HashSet::from([Destination::Visualiser]),
                         timestamp: chrono::Utc::now(),
-                    });
+                    };
+
+                    let r = self2.outbound.send(message);
 
                     match r {
                         Ok(_) => {}

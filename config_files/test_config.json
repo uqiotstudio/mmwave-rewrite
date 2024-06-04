@@ -1,0 +1,20 @@
+{
+  "descriptors": [
+    {
+      "id": {
+        "Device":[1,1]
+      },
+      "device_descriptor": {
+        "AWR": {
+          "serial": "R2091049",
+          "model": "AWR1843Boost",
+          "config_path": "./config_files/profile_AWR1843B.cfg",
+          "transform": {
+            "translation": [0.0,0.0,0.0],
+            "orientation": [0.0,0.0]
+          }
+        }
+      }
+    }
+  ]
+}
