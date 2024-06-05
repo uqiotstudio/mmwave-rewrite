@@ -228,7 +228,7 @@ impl Awr {
                             content: crate::core::message::MessageContent::DataMessage(
                                 Data::PointCloud(pointcloud),
                             ),
-                            destination: HashSet::from([Destination::Visualiser]),
+                            destination: HashSet::from([Destination::DataListener, Destination::Visualiser]),
                             timestamp: chrono::Utc::now(),
                         };
 

@@ -1,6 +1,6 @@
 {
   "descriptors": [
-        {
+      {
         "id": {           
           "Device": [1, 1]
         },
@@ -29,6 +29,16 @@
             "translation": [3.0,0.0,0.0],
             "orientation": [0.0,0.0]
           }
+        }
+      }
+    },
+    {
+      "id": {
+        "Device": [100, 1]
+      },
+      "device_descriptor": {
+        "Recorder": {
+          "out_path": "./outputs/test.json"
         }
       }
     }

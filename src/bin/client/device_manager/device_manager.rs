@@ -44,7 +44,7 @@ struct AppState {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    setup_logging(args.debug);
+    setup_logging(args.debug, args.log_relay);
     set_panic_hook();
 
     let server_address = ServerAddress::new(args.clone()).await;
@@ -70,7 +70,7 @@ async fn main() {
     error!("task aborted, this is unrecoverable");
 }
 
-fn setup_logging(debug: bool) {
+fn setup_logging(debug: bool, log_relay: bool) {
     let indicatif_layer =
         IndicatifLayer::new().with_max_progress_bars(100, Some(ProgressStyle::default_bar()));
     let mut filter = EnvFilter::builder()
@@ -82,7 +82,15 @@ fn setup_logging(debug: bool) {
         filter = filter.add_directive("mmwave=debug".parse().expect("Failed to parse directive"));
     }
 
-    tracing_subscriber::registry()
+    if !log_relay {
+        filter = filter.add_directive(
+            "mmwave::core::relay=off"
+                .parse()
+                .expect("Failed to parse directive"),
+        );
+    }
+
+    let mut builder = tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().with_writer(indicatif_layer.get_stderr_writer()))
         .with(indicatif_layer)
         .with(filter)

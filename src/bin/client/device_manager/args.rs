@@ -21,4 +21,8 @@ pub struct Args {
     /// Enable debug logging
     #[arg(short, long, default_value_t = false)]
     pub debug: bool,
+
+    /// Enable relay logging
+    #[arg(short, long, default_value_t = false)]
+    pub log_relay: bool,
 }
