@@ -1,6 +1,7 @@
 /target
 .direnv
 zed_device/cpp/build
+outputs
 
 
 # Added by cargo
