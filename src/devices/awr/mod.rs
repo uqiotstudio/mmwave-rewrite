@@ -12,6 +12,7 @@ use crate::core::data::Data;
 use crate::core::message::Destination;
 use crate::core::message::Id;
 use crate::core::message::Message;
+use crate::core::message::MessageContent;
 use crate::core::pointcloud::IntoPointCloud;
 use crate::core::pointcloud::PointCloud;
 use crate::core::pointcloud::PointMetaData;
@@ -19,8 +20,11 @@ use crate::core::transform::Transform;
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde::Deserializer;
+use tokio::select;
+use tokio::time::interval;
 use std::collections::HashSet;
 use std::fmt::Display;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::Duration;
@@ -110,218 +114,153 @@ impl<'de> Deserialize<'de> for AwrDescriptor {
 
 #[derive(Debug)]
 pub struct Awr {
-    id: Option<Id>,
-    descriptor_buffer: Option<AwrDescriptor>,
-    connection: Option<Connection>,
+    id: Id,
+    descriptor: AwrDescriptor,
     inbound: broadcast::Sender<Message>,
     outbound: broadcast::Sender<Message>,
 }
 
-impl Default for Awr {
-    fn default() -> Self {
-        Awr {
-            id: None,
-            descriptor_buffer: None,
-            connection: None,
+impl Awr {
+    pub fn new(id: Id, descriptor: AwrDescriptor) -> Self {
+        Awr { 
+            id,
+            descriptor,
             inbound: broadcast::channel(100).0,
             outbound: broadcast::channel(100).0,
         }
     }
-}
-
-#[async_trait]
-impl Device for Awr {
-    fn channel(&mut self) -> (broadcast::Sender<Message>, broadcast::Receiver<Message>) {
+    
+    #[instrument(skip_all)]
+    pub fn channel(&mut self) -> (broadcast::Sender<Message>, broadcast::Receiver<Message>) {
         (self.inbound.clone(), self.outbound.subscribe())
     }
 
     #[instrument(skip_all)]
-    fn configure(&mut self, config: DeviceConfig) {
-        let span = span!(Level::INFO, "configure", config = tracing::field::Empty);
-        let _enter = span.enter();
+    pub fn start(self) -> JoinHandle<()> {
+        let Self {inbound, outbound, id, descriptor } = self;
+        let mut inbound_rx = inbound.subscribe();
 
-        span.record("config", &tracing::field::debug(&config));
-
-        let DeviceDescriptor::AWR(descriptor) = config.device_descriptor;
-        self.id = Some(config.id);
-        self.descriptor_buffer = Some(descriptor);
-        info!("Reconfigured device");
-    }
-
-    fn destinations(&mut self) -> HashSet<Destination> {
-        HashSet::from([Destination::Sensor])
-    }
-
-    #[instrument(skip_all)]
-    fn start(&mut self) -> JoinHandle<()> {
-        let self2 = Arc::new(Mutex::new(std::mem::take(self)));
-        tokio::task::spawn({
-            let self2 = self2.clone();
+        let descriptor = Arc::new(Mutex::new(descriptor));
+        let connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
+  
+        let mut t1 = tokio::task::spawn({
+            let descriptor = descriptor.clone();
+            let connected= connected.clone();
             async move {
-            let mut interval = tokio::time::interval(Duration::from_millis(1000));
-            let span = span!(Level::INFO, "sensor running",);
-            let _enter = span.enter();
-
-            let mut descriptor = None;
-            let mut inbound_rx = self2.lock().await.inbound.subscribe();
-
-            tokio::task::spawn({
-                let self2 = self2.clone();
-                let id = self2.lock().await.id.clone();
-                async move {
-                    while let Ok(message) = inbound_rx.recv().await {
-                        match message.content {
-                            crate::core::message::MessageContent::DataMessage(_) => todo!(),
-                            crate::core::message::MessageContent::ConfigMessage(config) => {
-                                for desc in config.descriptors {
-                                    if Some(desc.id) == id {
-                                        let mut self2 = self2.lock().await;
-                                        self2.configure(desc);
-                                    }
+                while let Ok(message) = inbound_rx.recv().await {
+                    match message.content {
+                        MessageContent::ConfigMessage(config) => {
+                            info!("awr received config update");
+                            for DeviceConfig { id: new_id, device_descriptor } in config.descriptors {
+                                if id != new_id {
+                                    continue;
                                 }
-                            },
-                            crate::core::message::MessageContent::ConfigRequest(_) => todo!(),
-                            crate::core::message::MessageContent::RegisterId(_, _) => todo!(),
-                            crate::core::message::MessageContent::DeregisterId(_, _) => todo!(),
-                            crate::core::message::MessageContent::Reboot => todo!(),
-                            
+                                let DeviceDescriptor::AWR(awr_desc) = device_descriptor else {
+                                    continue;
+                                };
+                                let mut descriptor = descriptor.lock().await;
+                                if descriptor.config != awr_desc.config || descriptor.model != awr_desc.model || descriptor.serial != awr_desc.serial {
+                                    // if anything other than the transform is different, we have to disconnect and reconnect
+                                    connected.store(false, Ordering::SeqCst);
+                                    info!("changes to config require a restart");
+                                }
+                                *descriptor = awr_desc;
+                            }
+                        },
+                        _other => {
+                            error!("Received unsupported message");
                         }
                     }
-                }
-            });
-            
-
-            loop {
-                interval.tick().await;
-
-                // set up the connection, according to our config
-                let descriptor = {
-                    let mut self2 = self2.lock().await;
-                    if let Some(new_descriptor) = self2.descriptor_buffer.clone() {
-                        self2.descriptor_buffer = None;
-                        descriptor = Some(new_descriptor.clone());
-                        info!("Updated descriptor");
-                        new_descriptor
-                    } else if let Some(new_descriptor) = descriptor.clone() {
-                        new_descriptor
-                    } else {
-                        continue;
-                    }
-                };
-
-                // Initialize the radar
-                let connection =
-                    match Connection::try_open(descriptor.clone().serial, descriptor.model) {
-                        Ok(connection) => connection,
-                        Err(err) => {
-                            error!("Radar init error");
-                            debug!(err=?err, "Radar init error");
-                            // TODO this is where we might send a reboot message to parent
-                            // depending on the erorr of course
-                            continue;
-                        }
-                    };
-
-                let mut connection = match connection.send_command(descriptor.config) {
-                    Err(e) => {
-                        error!("Failed to send config to radar");
-                        continue;
-                    }
-                    Ok(connection) => connection,
-                };
-
-                loop {
-                    tokio::task::yield_now().await;
-
-                    let frame = match connection.read_frame() {
-                        Err(e) => {
-                            error!("Failed to read from radar");
-                            continue;
-                        }
-                        Ok(frame) => frame,
-                    };
-
-                    let message = Message {
-                        content: crate::core::message::MessageContent::DataMessage(
-                            Data::PointCloud(frame.into_point_cloud()),
-                        ),
-                        destination: HashSet::from([Destination::Visualiser]),
-                        timestamp: chrono::Utc::now(),
-                    };
-
-                    let r = self2.lock().await.outbound.send(message);
-
-                    match r {
-                        Ok(_) => {}
-                        Err(e) => {
-                            error!(error=?e, "awr device outbound channel closed, this should be impossible");
-                            panic!("awr device outbound channel closed");
-                        }
-                    };
                 }
             }
-        }.instrument(tracing::Span::current())})
+        }).instrument(tracing::Span::current());
+
+        let mut t2 = tokio::task::spawn({
+            let mut interval = tokio::time::interval(Duration::from_millis(1000));
+            async move {            
+                let mut connection ;
+                loop {
+                    interval.tick().await;
+                    let descriptor = descriptor.lock().await;
+
+                    let transform = descriptor.transform.clone();
+
+                    connection = match Connection::try_open(descriptor.clone().serial, descriptor.model) {
+                            Ok(connection) => connection,
+                            Err(error) => {
+                                error!(error=?error, "unable to establish connection");
+                                continue;
+                        },
+                    };
+
+                    connection = match connection.send_command(descriptor.config.clone()) {
+                        Err(e) => {
+                            error!("Failed to send config to radar");
+                            continue;
+                        }
+                        Ok(connection) => connection,
+                    };
+
+                    std::mem::drop(descriptor);
+                    connected.store(true, Ordering::SeqCst);
+
+                    while connected.load(Ordering::SeqCst) {
+                        tokio::task::yield_now().await;
+                        let frame = match connection.read_frame() {
+                            Err(e) => {
+                                error!("Failed to read from radar");
+                                continue;
+                            }
+                            Ok(frame) => frame,
+                        };
+
+                        let mut pointcloud = frame.into_point_cloud();
+                        pointcloud.points = pointcloud
+                            .points
+                            .iter_mut()
+                            .map(|pt| {
+                                let transformed = transform.apply([pt[0], pt[1], pt[2]]);
+                                [transformed[0], transformed[1], transformed[2], pt[3]]
+                            })
+                            .collect();
+
+                        let message = Message {
+                            content: crate::core::message::MessageContent::DataMessage(
+                                Data::PointCloud(pointcloud),
+                            ),
+                            destination: HashSet::from([Destination::Visualiser]),
+                            timestamp: chrono::Utc::now(),
+                        };
+
+                        let r = outbound.send(message);
+
+                        match r {
+                            Ok(_) => {}
+                            Err(e) => {
+                                error!(error=?e, "awr device outbound channel closed, this should be impossible");
+                                panic!("awr device outbound channel closed");
+                            }
+                        };
+                    }
+
+                    std::mem::drop(connection);
+                }
+            }
+        }).instrument(tracing::Span::current());
+
+        tokio::task::spawn(async move{
+            let mut t1 = t1.inner_mut();
+            let mut t2 = t2.inner_mut();
+            select!(
+                _ = &mut t1 => {
+                    t2.abort()
+                }
+                _ = &mut t2 => {
+                    t1.abort()
+                }
+            )
+        })
     }
-
-    // fn try_read(&mut self) -> Result<Data, SensorReadError> {
-    //     match self.read_frame() {
-    //         Ok(frame) => Ok(Data::AWRFrame(frame)),
-    //         Err(RadarReadError::ParseError(e)) => {
-    //             eprintln!("Parse error reading frame, {:?}", e);
-    //             // A parse error isnt serious enough to warrant a restart, so just let us continue with no points for a frame
-    //             Ok(Data::PointCloud(PointCloud::default()))
-    //         }
-    //         // Any other errors should never happen and will require reinitialization
-    //         Err(e) => Err(e.into()),
-    //     }
-    // }
-}
-
-impl Awr {
-    // fn reset_device(&mut self) -> Result<(), Box<dyn Error>> {
-    //     for device in rusb::devices()?.iter() {
-    //         let device_desc = match device.device_descriptor() {
-    //             Ok(dd) => dd,
-    //             Err(_) => continue,
-    //         };
-
-    //         let mut handle = match device.open() {
-    //             Ok(h) => h,
-    //             Err(_) => continue,
-    //         };
-
-    //         // dbg!(&handle);
-
-    //         let serial_number = match handle.read_serial_number_string_ascii(&device_desc) {
-    //             Ok(sn) => sn,
-    //             Err(_) => continue,
-    //         };
-
-    //         if serial_number == self.descriptor.serial {
-    //             handle.reset();
-    //         }
-    //     }
-
-    //     Ok(())
-    // }
-
-    // pub fn reconnect(mut self) -> Self {
-    //     // Restart the device
-    //     let Ok(()) = self.reset_device() else {
-    //         return self;
-    //     };
-
-    //     // Attempt to craete a new instance, else give self back, still broken
-    //     self.descriptor.clone().try_initialize().unwrap_or(self)
-    // }
-
-    // pub fn read_frame(&mut self) -> Result<Frame, RadarReadError> {
-    //     let frame = match self.connection.read_frame() {
-    //         Ok(frame) => frame,
-    //         Err(e) => return Err(e),
-    //     };
-    //     Ok(frame)
-    // }
 }
 
 impl IntoPointCloud for Frame {

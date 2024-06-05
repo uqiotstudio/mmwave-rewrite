@@ -9,14 +9,22 @@ use tokio::{sync::broadcast, task::JoinHandle};
 
 use self::awr::{Awr, AwrDescriptor};
 
-pub trait Device: Send {
-    fn channel(&mut self) -> (broadcast::Sender<Message>, broadcast::Receiver<Message>);
+pub enum Device {
+    AWR(Awr),
+}
 
-    fn configure(&mut self, config: DeviceConfig);
+impl Device {
+    pub fn channel(&mut self) -> (broadcast::Sender<Message>, broadcast::Receiver<Message>) {
+        match self {
+            Device::AWR(awr) => awr.channel(),
+        }
+    }
 
-    fn destinations(&mut self) -> HashSet<Destination>;
-
-    fn start(&mut self) -> JoinHandle<()>;
+    pub fn start(self) -> JoinHandle<()> {
+        match self {
+            Device::AWR(awr) => awr.start(),
+        }
+    }
 }
 
 #[derive(PartialEq, Serialize, Deserialize, Debug, Clone)]
@@ -37,12 +45,12 @@ impl DeviceConfig {
         self.device_descriptor.title()
     }
 
-    pub fn init(&self) -> Box<dyn Device> {
-        Box::new(match self.device_descriptor {
-            DeviceDescriptor::AWR(_) => Awr::default(),
+    pub fn init(self) -> Device {
+        match self.device_descriptor {
+            DeviceDescriptor::AWR(awr_descriptor) => Device::AWR(Awr::new(self.id, awr_descriptor)),
             // DeviceDescriptor::ZED(_) => todo!(),
             // DeviceDescriptor::Playback(_) => todo!(),
-        })
+        }
     }
 }
 

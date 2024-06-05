@@ -49,6 +49,15 @@ pub enum Id {
     Device(usize, usize),
 }
 
+impl Id {
+    pub fn to_machine(self) -> Self {
+        match self {
+            Id::Machine(m) => Id::Machine(m),
+            Id::Device(m, d) => Id::Machine(m),
+        }
+    }
+}
+
 impl Display for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

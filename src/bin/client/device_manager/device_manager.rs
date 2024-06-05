@@ -219,20 +219,38 @@ async fn manage_devices(app_state: AppState, outbound_tx: broadcast::Sender<Mess
     relay.lock().await.register(id, Destination::Id(id));
     relay.lock().await.register(id, Destination::Manager);
 
-    let mut interval = tokio::time::interval(Duration::from_secs(10));
+    let interval = tokio::time::interval(Duration::from_secs(10));
     tokio::task::spawn(request_config_loop(outbound_tx.clone(), id, interval));
 
     while let Ok(message) = rx.recv().await {
-        info!(message=?message, "Received message");
+        info!("Received message");
+        debug!(message=?message, "Received message");
         match message.content {
             MessageContent::ConfigMessage(config) => {
                 handle_config_message(config, id, relay.clone(), &mut tasks, &outbound_tx).await
+            }
+            MessageContent::RegisterId(ids, destinations) => {
+                handle_registration_message(ids, destinations, relay.clone()).await
             }
             MessageContent::Reboot => todo!(),
             message => error!(message = %message, "Received unsupported message"),
         }
     }
     error!("relay subscription closed unexpectedly");
+}
+
+#[instrument(skip_all)]
+async fn handle_registration_message(
+    ids: HashSet<Id>,
+    destinations: HashSet<Destination>,
+    relay: Arc<Mutex<Relay<Message>>>,
+) {
+    for id in ids {
+        let mut relay = relay.lock().await;
+        for destination in destinations.clone() {
+            relay.register(id, destination);
+        }
+    }
 }
 
 #[instrument(skip_all)]
@@ -306,21 +324,17 @@ async fn handle_device(
 ) {
     let mut dev = desc.init();
     let (dev_tx, dev_rx) = dev.channel();
-    dev.configure(desc);
 
+    // We want to register the ID of this device to listen for its own ID on both the server, and on this device manager.
     let _ = outbound_tx.send(Message {
         content: MessageContent::RegisterId(
             HashSet::from([id]),
             HashSet::from([Destination::Id(id)]),
         ),
-        destination: HashSet::from([Destination::Server]),
+        destination: HashSet::from([Destination::Server, Destination::Id(id.to_machine())]),
         timestamp: chrono::Utc::now(),
     });
 
-    relay.lock().await.register(id, Destination::Id(id));
-    for destination in dev.destinations() {
-        relay.lock().await.register(id, destination);
-    }
     let rx = relay.lock().await.subscribe(id);
     let mut dev = dev.start();
 
