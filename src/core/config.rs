@@ -1,4 +1,4 @@
-use crate::{devices::DeviceConfig, sensors::SensorConfig};
+use crate::devices::DeviceConfig;
 
 #[derive(PartialEq, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Configuration {

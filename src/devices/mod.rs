@@ -1,5 +1,6 @@
 pub mod awr;
 mod recorder;
+pub mod zed;
 
 use crate::core::message::{Destination, Id, Message};
 use async_trait::async_trait;
@@ -11,11 +12,13 @@ use tokio::{sync::broadcast, task::JoinHandle};
 use self::{
     awr::{Awr, AwrDescriptor},
     recorder::{Recorder, RecorderDescriptor},
+    zed::{Zed, ZedDescriptor},
 };
 
 pub enum Device {
     AWR(Awr),
     Recorder(Recorder),
+    Zed(Zed),
 }
 
 impl Device {
@@ -23,6 +26,7 @@ impl Device {
         match self {
             Device::AWR(awr) => awr.channel(),
             Device::Recorder(recorder) => recorder.channel(),
+            Device::Zed(zed) => zed.channel(),
         }
     }
 
@@ -30,6 +34,7 @@ impl Device {
         match self {
             Device::AWR(awr) => awr.start(),
             Device::Recorder(recorder) => recorder.start(),
+            Device::Zed(zed) => zed.start(),
         }
     }
 }
@@ -57,8 +62,8 @@ impl DeviceConfig {
             DeviceDescriptor::AWR(awr_descriptor) => Device::AWR(Awr::new(self.id, awr_descriptor)),
             DeviceDescriptor::Recorder(recorder_descriptor) => {
                 Device::Recorder(Recorder::new(self.id, recorder_descriptor))
-            } // DeviceDescriptor::ZED(_) => todo!(),
-              // DeviceDescriptor::Playback(_) => todo!(),
+            }
+            DeviceDescriptor::ZED(zed_descriptor) => Device::Zed(Zed::new(self.id, zed_descriptor)),
         }
     }
 }
@@ -67,8 +72,7 @@ impl DeviceConfig {
 pub enum DeviceDescriptor {
     AWR(AwrDescriptor),
     Recorder(RecorderDescriptor),
-    // ZED(ZedDescriptor),
-    // Playback(PlaybackDescriptor),
+    ZED(ZedDescriptor),
 }
 
 impl DeviceDescriptor {
@@ -79,12 +83,10 @@ impl DeviceDescriptor {
             }
             DeviceDescriptor::Recorder(recorder) => {
                 format!("recorder")
-            } // DeviceDescriptor::ZED(_desc) => {
-              //     format! {"ZED Camera"}
-              // }
-              // DeviceDescriptor::Playback(desc) => {
-              //     format!("Playback {}", desc.path)
-              // }
+            }
+            DeviceDescriptor::ZED(zed) => {
+                format!("ZED Camera")
+            }
         }
     }
 }

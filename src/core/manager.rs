@@ -5,13 +5,6 @@ use tokio::{
     task, time,
 };
 
-use crate::{
-    core::{config::Configuration, pointcloud::IntoPointCloud},
-    sensors::{Sensor, SensorConfig},
-};
-
-use super::{data::Data, message::Id};
-
 // pub struct Manager {
 //     machine_id: Id,
 //     config: Configuration,
