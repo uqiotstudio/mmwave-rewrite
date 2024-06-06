@@ -25,4 +25,8 @@ pub struct Args {
     /// Enable relay logging
     #[arg(short, long, default_value_t = false)]
     pub log_relay: bool,
+
+    /// Whether to use tracing
+    #[arg(short, long, default_value_t = false)]
+    pub tracing: bool,
 }

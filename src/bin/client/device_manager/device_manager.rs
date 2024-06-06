@@ -44,7 +44,9 @@ struct AppState {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    setup_logging(args.debug, args.log_relay);
+    if args.tracing {
+        setup_logging(args.debug, args.log_relay);
+    }
     set_panic_hook();
 
     let server_address = ServerAddress::new(args.clone()).await;

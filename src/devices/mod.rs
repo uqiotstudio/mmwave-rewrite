@@ -1,5 +1,6 @@
 pub mod awr;
 mod recorder;
+pub mod visualiser;
 pub mod zed;
 
 use crate::core::message::{Destination, Id, Message};
@@ -12,6 +13,7 @@ use tokio::{sync::broadcast, task::JoinHandle};
 use self::{
     awr::{Awr, AwrDescriptor},
     recorder::{Recorder, RecorderDescriptor},
+    visualiser::{Visualiser, VisualiserDescriptor},
     zed::{Zed, ZedDescriptor},
 };
 
@@ -19,6 +21,7 @@ pub enum Device {
     AWR(Awr),
     Recorder(Recorder),
     Zed(Zed),
+    Visualiser(Visualiser),
 }
 
 impl Device {
@@ -27,6 +30,7 @@ impl Device {
             Device::AWR(awr) => awr.channel(),
             Device::Recorder(recorder) => recorder.channel(),
             Device::Zed(zed) => zed.channel(),
+            Device::Visualiser(visualiser) => visualiser.channel(),
         }
     }
 
@@ -35,6 +39,7 @@ impl Device {
             Device::AWR(awr) => awr.start(),
             Device::Recorder(recorder) => recorder.start(),
             Device::Zed(zed) => zed.start(),
+            Device::Visualiser(visualiser) => visualiser.start(),
         }
     }
 }
@@ -64,6 +69,9 @@ impl DeviceConfig {
                 Device::Recorder(Recorder::new(self.id, recorder_descriptor))
             }
             DeviceDescriptor::ZED(zed_descriptor) => Device::Zed(Zed::new(self.id, zed_descriptor)),
+            DeviceDescriptor::Visualiser(visualiser_descriptor) => {
+                Device::Visualiser(Visualiser::new(self.id))
+            }
         }
     }
 }
@@ -73,6 +81,7 @@ pub enum DeviceDescriptor {
     AWR(AwrDescriptor),
     Recorder(RecorderDescriptor),
     ZED(ZedDescriptor),
+    Visualiser(VisualiserDescriptor),
 }
 
 impl DeviceDescriptor {
@@ -86,6 +95,9 @@ impl DeviceDescriptor {
             }
             DeviceDescriptor::ZED(zed) => {
                 format!("ZED Camera")
+            }
+            DeviceDescriptor::Visualiser(vis) => {
+                format!("Visualiser")
             }
         }
     }

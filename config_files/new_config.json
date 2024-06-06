@@ -1,0 +1,117 @@
+{
+  "descriptors": [
+      {
+        "id": {           
+          "Device": [1, 1]
+        },
+        "device_descriptor": {
+            "AWR": {
+                "serial": "00E23E8E",
+                "model": "AWR1843AOP",
+                "config_path": "./config_files/profile_AWR1843_AOP.cfg",
+                "transform": {
+                    "translation": [0, 0, 1],
+                    "orientation": [3.15, 0]
+                }
+            }
+        }
+    },
+      {
+        "id": {           
+          "Device": [2, 1]
+        },
+        "device_descriptor": {
+            "AWR": {
+                "serial": "00E23EA9",
+                "model": "AWR1843AOP",
+                "config_path": "./config_files/profile_AWR1843_AOP.cfg",
+                "transform": {
+                    "translation": [5.4, 2, 1],
+                    "orientation": [7.85, 0]
+                }
+            }
+        }
+    },
+      {
+        "id": {           
+          "Device": [3, 1]
+        },
+        "device_descriptor": {
+            "AWR": {
+                "serial": "00E23EA9",
+                "model": "AWR1843AOP",
+                "config_path": "./config_files/profile_AWR1843_AOP.cfg",
+                "transform": {
+                    "translation": [5.4, 2, 1],
+                    "orientation": [7.85, 0]
+                }
+            }
+        }
+    },
+      {
+        "id": {           
+          "Device": [5, 1]
+        },
+        "device_descriptor": {
+            "AWR": {
+                "serial": "R2091049",
+                "model": "AWR1843Boost",
+                "config_path": "./config_files/profile_AWR1843B.cfg",
+                "transform": {
+                    "translation": [-2.5, 2.1, 1.2],
+                    "orientation": [-1.57, 0]
+                }
+            }
+        }
+    },
+      {
+        "id": {           
+          "Device": [5, 1]
+        },
+        "device_descriptor": {
+            "AWR": {
+                "serial": "R2091049",
+                "model": "AWR1843Boost",
+                "config_path": "./config_files/profile_AWR1843B.cfg",
+                "transform": {
+                    "translation": [-2.5, 2.1, 1.2],
+                    "orientation": [-1.57, 0]
+                }
+            }
+        }
+    },
+      {
+        "id": {           
+          "Device": [5, 2]
+        },
+        "device_descriptor": {
+            "ZED": {
+                "transform": {
+                    "translation": [-2.5, 2.1, 1.2],
+                    "orientation": [-1.57, 0]
+                }
+            }
+        }
+    },
+    {
+      "id": {
+        "Device": [100, 1]
+      },
+      "device_descriptor": {
+        "Recorder": {
+          "out_path": "./outputs/test.json"
+        }
+      }
+    },
+    {
+      "id": {
+        "Device": [101, 1]
+      },
+      "device_descriptor": {
+        "Visualiser": {
+          
+        }
+      }
+    }
+  ]
+}

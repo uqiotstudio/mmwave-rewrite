@@ -24,6 +24,7 @@ impl ServerAddress {
             machine_id: _,
             debug: _,
             log_relay: _,
+            tracing: _,
         } = args;
 
         let (address, is_fixed) = match ip {

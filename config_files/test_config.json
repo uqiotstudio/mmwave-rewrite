@@ -41,6 +41,16 @@
           "out_path": "./outputs/test.json"
         }
       }
+    },
+    {
+      "id": {
+        "Device": [101, 1]
+      },
+      "device_descriptor": {
+        "Visualiser": {
+          
+        }
+      }
     }
   ]
 }
