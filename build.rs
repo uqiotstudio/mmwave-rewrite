@@ -8,15 +8,15 @@ fn main() {
         // Update ld_library_path
         let ld_library_path = env::var("LD_LIBRARY_PATH").unwrap_or_default();
         let new_ld_library_path = format!(
-            "{}:{}/src/sensors/zed/cpp/build",
+            "{}:{}/src/devices/zed/zed/cpp/build",
             ld_library_path,
             env::current_dir().unwrap().display()
         );
         println!("cargo:rustc-env=LD_LIBRARY_PATH={}", new_ld_library_path);
 
         // Define the path to your C++ source files and build directory
-        let cpp_source_dir = "src/sensors/zed/cpp";
-        let build_dir = "src/sensors/zed/cpp/build";
+        let cpp_source_dir = "src/devices/zed/zed/cpp";
+        let build_dir = "src/devices/zed/zed/cpp/build";
 
         // Check if the C++ files have changed
         let cpp_files_changed = fs::read_dir(cpp_source_dir)
