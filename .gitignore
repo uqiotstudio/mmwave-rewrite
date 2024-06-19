@@ -2,6 +2,7 @@
 .direnv
 zed_device/cpp/build
 outputs
+js_store
 
 
 # Added by cargo
