@@ -1,0 +1,11 @@
+[package]
+name = "mmwave-awr"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-nats.workspace = true
+futures.workspace = true
+tokio.workspace = true
+mmwave-core = { path = "../mmwave-core" }
+thiserror.workspace = true

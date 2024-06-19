@@ -1,0 +1,13 @@
+[package]
+name = "mmwave-machine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-nats.workspace = true
+bincode.workspace = true
+clap.workspace = true
+futures.workspace = true
+mmwave-core = { path = "../mmwave-core" }
+tokio.workspace = true
+tracing.workspace = true

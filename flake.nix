@@ -60,6 +60,8 @@
             rust-analyzer
             rustPackages.clippy
             rustup
+            natscli
+            nats-server
           ] ++ libs;
         };
       });
