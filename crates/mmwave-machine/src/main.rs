@@ -1,19 +1,14 @@
 mod args;
 
 use args::Args;
-use async_nats::{jetstream, rustls::pki_types::IpAddr};
-use bincode::deserialize;
+use async_nats::jetstream;
+
 use clap::Parser;
 use futures::StreamExt;
-use mmwave_core::{
-    address::ServerAddress,
-    config::Configuration,
-    logging::enable_tracing,
-    message::{Id, Message, Tag},
-};
+use mmwave_core::{address::ServerAddress, config::Configuration, logging::enable_tracing};
 use std::error::Error;
-use tokio::task::JoinHandle;
-use tracing::{error, info};
+
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
