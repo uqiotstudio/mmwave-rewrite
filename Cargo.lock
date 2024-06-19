@@ -1019,6 +1019,7 @@ dependencies = [
  "clap",
  "futures",
  "mmwave-core",
+ "serde_json",
  "tokio",
  "tracing",
 ]

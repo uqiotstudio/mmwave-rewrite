@@ -36,7 +36,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         })
         .await?;
 
-    configs.put("config", Configuration);
+    let default_config = Configuration::default();
+    let serialized = serde_json::to_string(&default_config)?;
+    configs.put("config", serialized.into()).await?;
 
     let mut entries = configs.watch("config").await?;
     while let Some(config) = entries.next().await {
