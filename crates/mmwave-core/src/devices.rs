@@ -13,7 +13,7 @@ pub struct DeviceConfig {
 impl Clone for DeviceConfig {
     fn clone(&self) -> Self {
         Self {
-            id: self.id.clone(),
+            id: self.id,
             device_descriptor: self.device_descriptor.clone_boxed(),
         }
     }
@@ -53,17 +53,17 @@ pub trait DeviceDescriptor {
     async fn init(self: Box<Self>, id: Id, address: ServerAddress);
     fn clone_boxed(&self) -> Box<dyn DeviceDescriptor>;
     fn title(&self) -> String {
-        format!("Untitled Device")
+        "Untitled Device".to_string()
     }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-struct Yeet;
+struct EmptyDeviceDescriptor;
 
 #[typetag::serde]
 #[async_trait]
-impl DeviceDescriptor for Yeet {
-    async fn init(self: Box<Self>, id: Id, address: ServerAddress) {}
+impl DeviceDescriptor for EmptyDeviceDescriptor {
+    async fn init(self: Box<Self>, _id: Id, _address: ServerAddress) {}
     fn clone_boxed(&self) -> Box<dyn DeviceDescriptor> {
         Box::new(self.clone())
     }

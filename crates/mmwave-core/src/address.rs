@@ -84,8 +84,7 @@ async fn discover_service() -> SocketAddr {
                         // Ipv6 Has issues setting up http request urls
                         let mut addr = responder.addr;
                         addr.set_port(port);
-                        found_tx.send(addr);
-                        return;
+                        let _ = found_tx.send(addr);
                     } else {
                         warn!("The server should use ipv4");
                     }
@@ -95,7 +94,7 @@ async fn discover_service() -> SocketAddr {
 
     let server = found_rx.recv().expect("Lost mDNS discovery channel");
 
-    discovery.shutdown();
+    let _ = discovery.shutdown();
 
     info!(selected = %server);
     return server;

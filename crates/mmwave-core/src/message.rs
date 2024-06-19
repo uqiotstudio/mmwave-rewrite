@@ -59,7 +59,7 @@ impl Id {
     pub fn to_machine(self) -> Self {
         match self {
             Id::Machine(m) => Id::Machine(m),
-            Id::Device(m, d) => Id::Machine(m),
+            Id::Device(m, _d) => Id::Machine(m),
         }
     }
 }
@@ -76,7 +76,7 @@ impl Display for Id {
 impl Display for MessageContent {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            MessageContent::PointCloud(pointcloud) => write!(f, "pointcloud"),
+            MessageContent::PointCloud(_pointcloud) => write!(f, "pointcloud"),
             MessageContent::Empty => write!(f, "empty"),
         }
     }
