@@ -1,0 +1,31 @@
+{
+  "descriptors": [
+    {
+      "id": {
+        "Device": [
+          0,
+          1
+        ]
+      },
+      "device_descriptor": {
+        "type": "AwrDescriptor",
+        "value": {
+          "serial": "R2091049",
+          "model": "AWR1843Boost",
+          "config": "200",
+          "transform": {
+            "translation": [
+              0,
+              0,
+              0
+            ],
+            "orientation": [
+              0,
+              0
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

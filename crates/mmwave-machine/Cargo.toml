@@ -9,6 +9,7 @@ bincode.workspace = true
 clap.workspace = true
 futures.workspace = true
 mmwave-core = { path = "../mmwave-core" }
+mmwave-awr = { path = "../mmwave-awr" }
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true

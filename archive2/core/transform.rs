@@ -159,7 +159,7 @@ mod tests {
             orientation: [0., 0.],
         };
         let transformed_point = transform.unapply(point);
-        dbg!(transformed_point);
+        // dbg!(transformed_point);
         assert!(are_close(transformed_point, [1., 0., 0.], 1e-6));
     }
 

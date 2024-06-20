@@ -18,3 +18,5 @@ searchlight.workspace = true
 async-nats.workspace = true
 typetag.workspace = true
 async-trait.workspace = true
+ndarray.workspace = true
+serde_json.workspace = true

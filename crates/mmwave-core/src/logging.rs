@@ -1,4 +1,7 @@
+use std::panic;
+
 use indicatif::ProgressStyle;
+use tracing::error;
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -27,4 +30,12 @@ pub fn enable_tracing(debug: bool, log_relay: bool) {
         .with(indicatif_layer)
         .with(filter)
         .init();
+
+    set_panic_hook();
+}
+
+fn set_panic_hook() {
+    panic::set_hook(Box::new(|panic_info| {
+        error!("Panic occurred: {:?}", panic_info);
+    }));
 }

@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::hash::Hash;
+use std::{any::Any, hash::Hash, time::Duration};
+use tracing::{info, instrument, warn};
 
 use crate::{address::ServerAddress, message::Id};
 
@@ -25,6 +26,8 @@ impl std::fmt::Debug for DeviceConfig {
     }
 }
 
+impl Eq for DeviceConfig {}
+
 impl PartialEq for DeviceConfig {
     fn eq(&self, other: &Self) -> bool {
         self.id.eq(&other.id)
@@ -47,9 +50,9 @@ impl DeviceConfig {
     }
 }
 
-#[typetag::serde(tag = "type")]
+#[typetag::serde(tag = "type", content = "value")]
 #[async_trait]
-pub trait DeviceDescriptor {
+pub trait DeviceDescriptor: Send + Sync + Any {
     async fn init(self: Box<Self>, id: Id, address: ServerAddress);
     fn clone_boxed(&self) -> Box<dyn DeviceDescriptor>;
     fn title(&self) -> String {
@@ -58,12 +61,18 @@ pub trait DeviceDescriptor {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-struct EmptyDeviceDescriptor;
+pub struct EmptyDeviceDescriptor;
 
 #[typetag::serde]
 #[async_trait]
 impl DeviceDescriptor for EmptyDeviceDescriptor {
-    async fn init(self: Box<Self>, _id: Id, _address: ServerAddress) {}
+    #[instrument(skip_all)]
+    async fn init(self: Box<Self>, _id: Id, _address: ServerAddress) {
+        warn!("Opened Empty Device Descriptor");
+        tokio::time::sleep(Duration::from_millis(2000)).await;
+        warn!("Closing Empty Device Descriptor");
+        return;
+    }
     fn clone_boxed(&self) -> Box<dyn DeviceDescriptor> {
         Box::new(self.clone())
     }

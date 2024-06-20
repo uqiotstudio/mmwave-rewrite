@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use ndarray::array;
 use serde::{Deserialize, Serialize};
 
@@ -5,6 +7,16 @@ use serde::{Deserialize, Serialize};
 pub struct Transform {
     pub translation: [f32; 3], // Translation of the camera in meters, x, y, z
     pub orientation: [f32; 2], // Orientation of the camera in radians, yaw, pitch
+}
+
+impl Display for Transform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            translation: [x, y, z],
+            orientation: [yaw, pitch],
+        } = self;
+        write! {f, "(x({}), y({}), z({}), yaw({}), pitch({}))", x,y,z,yaw,pitch}
+    }
 }
 
 impl Transform {

@@ -9,3 +9,12 @@ futures.workspace = true
 tokio.workspace = true
 mmwave-core = { path = "../mmwave-core" }
 thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+bincode.workspace = true
+typetag.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+regex.workspace = true
+serialport.workspace = true
+udev.workspace = true
