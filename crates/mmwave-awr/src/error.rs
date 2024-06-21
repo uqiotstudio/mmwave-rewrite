@@ -10,26 +10,17 @@ pub enum RadarInitError {
     InaccessibleConfig(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum RadarReadError {
+    #[error("Disconnected")]
     Disconnected,
+    #[error("Timeout")]
     Timeout,
+    #[error("Not Connected")]
     NotConnected,
+    #[error("Parse Error {0}")]
     ParseError(ParseError),
 }
-
-impl std::fmt::Display for RadarReadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            RadarReadError::Disconnected => "Disconnected",
-            RadarReadError::Timeout => "Timeout",
-            RadarReadError::NotConnected => "NotConnected",
-            RadarReadError::ParseError(_) => "ParseError",
-        })
-    }
-}
-
-impl std::error::Error for RadarReadError {}
 
 #[derive(Debug, Error)]
 pub enum RadarWriteError {
@@ -41,9 +32,12 @@ pub enum RadarWriteError {
     Disconnected,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ParseError {
+    #[error("Data Length Mismatch")]
     DataLengthMismatch,
+    #[error("Malformed Data")]
     MalformedData,
+    #[error("Unimplemented Tlv Type {0}")]
     UnimplementedTlvType(String),
 }

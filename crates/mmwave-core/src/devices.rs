@@ -55,6 +55,7 @@ impl DeviceConfig {
 pub trait DeviceDescriptor: Send + Sync + Any {
     async fn init(self: Box<Self>, id: Id, address: ServerAddress);
     fn clone_boxed(&self) -> Box<dyn DeviceDescriptor>;
+    fn as_any(&self) -> &dyn Any;
     fn title(&self) -> String {
         "Untitled Device".to_string()
     }
@@ -75,5 +76,8 @@ impl DeviceDescriptor for EmptyDeviceDescriptor {
     }
     fn clone_boxed(&self) -> Box<dyn DeviceDescriptor> {
         Box::new(self.clone())
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

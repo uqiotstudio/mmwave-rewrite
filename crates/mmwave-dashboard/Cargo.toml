@@ -1,0 +1,18 @@
+[package]
+name = "mmwave-dashboard"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-nats.workspace = true
+bincode.workspace = true
+clap.workspace = true
+eframe.workspace = true
+egui.workspace = true
+futures.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+mmwave-core = { path = "../mmwave-core" }

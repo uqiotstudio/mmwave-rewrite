@@ -18,3 +18,4 @@ tracing.workspace = true
 regex.workspace = true
 serialport.workspace = true
 udev.workspace = true
+chrono.workspace = true

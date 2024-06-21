@@ -29,7 +29,6 @@ pub struct Connection {
 }
 
 impl Connection {
-    #[instrument]
     pub fn try_open(serial: String, model: Model) -> Result<Self, RadarInitError> {
         // Attempt to open the two serial devices
 

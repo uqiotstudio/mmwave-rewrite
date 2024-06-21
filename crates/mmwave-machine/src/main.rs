@@ -72,7 +72,7 @@ async fn handle_nats(address: ServerAddress, args: Args) -> Result<(), Box<dyn E
 
     if let Some(config) = store.get("config").await? {
         info!("Found initial config");
-        debug!(config=?config, "Updated config");
+        debug!(config=?config, "Initial config");
         match serde_json::from_slice(&config) {
             Ok(config) => {
                 update_devices(&mut devices, config, address.clone(), args.clone());
@@ -94,8 +94,8 @@ async fn handle_nats(address: ServerAddress, args: Args) -> Result<(), Box<dyn E
                 break;
             }
             Ok(entry) => {
-                info!("Found updated config");
-                debug!(entry=?entry, "Updated config");
+                info!("New config inbound");
+                debug!(entry=?entry, "Inbound config");
                 let config = match serde_json::from_slice(&entry.value) {
                     Ok(config) => config,
                     Err(e) => {

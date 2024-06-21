@@ -17,15 +17,21 @@ use mmwave_core::{
     address::ServerAddress,
     config::Configuration,
     devices::{DeviceConfig, DeviceDescriptor},
-    message::Id,
+    message::{Id, Message, Tag},
     nats::get_store,
+    pointcloud::IntoPointCloud,
     transform::Transform,
 };
 use serde::{Deserialize, Deserializer, Serialize};
-use std::any::Any;
+use std::{
+    any::{Any, TypeId},
+    collections::HashSet,
+    future,
+    io::Read,
+};
 use std::{error::Error, fmt::Display, ops::Deref, panic, time::Duration};
-use tokio::{select, task::JoinHandle};
-use tracing::{error, info, instrument};
+use tokio::{pin, select, task::yield_now};
+use tracing::{debug, error, info, instrument, warn};
 
 #[derive(
     PartialEq, Hash, Eq, Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Default,
@@ -121,6 +127,10 @@ impl DeviceDescriptor for AwrDescriptor {
     fn title(&self) -> String {
         format!("{}", self)
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 #[instrument(skip_all)]
@@ -171,9 +181,10 @@ async fn run_awr(
 ) -> Result<(), Box<dyn Error>> {
     // Create a connection to the AWR device
     let mut connection = Connection::try_open(descriptor.serial.clone(), descriptor.model)?;
-    connection.send_command(descriptor.config.clone())?;
+    connection = connection.send_command(descriptor.config.clone())?;
 
     loop {
+        yield_now().await;
         select! {
              Some(config) = entries.next() => {
                  if let Err(()) = maintain_config(config?, &mut descriptor, id.clone()) {
@@ -181,12 +192,12 @@ async fn run_awr(
                      return Ok(());
                  }
             }
-            result = client.publish("pointcloud.awr", "data".into()) => {
+            result = maintain_connection(&mut connection, client) => {
                 match result {
-                    Ok(_) => {},
+                    Ok(_) => { info!("ptcld"); },
                     Err(e) => {
                         error!("Unable to publish to client");
-                        return Err(Box::new(e));
+                        return Err(e);
                     },
                 }
             }
@@ -194,30 +205,64 @@ async fn run_awr(
     }
 }
 
+async fn maintain_connection(
+    connection: &mut Connection,
+    client: &Client,
+) -> Result<(), Box<dyn Error>> {
+    yield_now().await;
+    let frame = match connection.read_frame() {
+        Ok(frame) => frame,
+        Err(e) => match e {
+            error::RadarReadError::ParseError(e) => {
+                warn!(error=%e, "AWR parse error, this is usually fine");
+                return Ok(());
+            }
+            other => return Err(Box::new(other)),
+        },
+    };
+    let message = Message {
+        content: mmwave_core::message::MessageContent::PointCloud(frame.into_point_cloud()),
+        tags: HashSet::from([Tag::Pointcloud]),
+        timestamp: chrono::Utc::now(),
+    };
+    let payload = bincode::serialize(&message)?.into();
+    client.publish("pointcloud.awr", payload).await?;
+    Ok(())
+}
+
 fn maintain_config(entry: Entry, descriptor: &mut AwrDescriptor, id: Id) -> Result<(), ()> {
     let Ok(configuration) = serde_json::from_slice::<Configuration>(&entry.value) else {
         return Ok(());
     };
 
-    for mut deviceConfig in configuration.descriptors {
-        if deviceConfig.id != id {
+    for mut device_config in configuration.descriptors {
+        if device_config.id != id {
             continue;
         }
 
-        let desc = &mut deviceConfig.device_descriptor;
-        let Some(desc) = (desc as &mut dyn Any).downcast_mut::<AwrDescriptor>() else {
-            todo!() // TODO this is failing somehow
-            continue;
+        let erased_desc = device_config.device_descriptor.as_any();
+
+        let updated_desc = match erased_desc.downcast_ref::<AwrDescriptor>() {
+            Some(awr_desc) => awr_desc,
+            None => {
+                tracing::error!(
+                    "Failed to downcast: actual type id = {:?}, expected type id = {:?}",
+                    erased_desc.type_id(),
+                    TypeId::of::<Box<AwrDescriptor>>()
+                );
+                continue;
+            }
         };
 
-        if descriptor.transform != desc.transform.clone() {
+        if descriptor.transform != updated_desc.transform.clone() {
             info!("Updated AWR descriptor transform");
-            descriptor.transform = desc.transform.clone();
+            descriptor.transform = updated_desc.transform.clone();
         }
 
-        if descriptor.config != desc.config {
+        if descriptor.config != updated_desc.config {
             info!("Updated AWR descriptor config file");
-            descriptor.config = desc.config.clone();
+            debug!(oldConfig=%descriptor.config, newConfig=%updated_desc.config);
+            descriptor.config = updated_desc.config.clone();
             return Err(());
         }
     }
