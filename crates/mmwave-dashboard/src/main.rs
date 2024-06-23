@@ -6,9 +6,10 @@ use bincode;
 use clap::Parser;
 use configuration::ConfigWidget;
 use eframe::egui;
-use egui::{Color32, Context, Vec2b, ViewportBuilder};
+use egui::{Color32, Context, Stroke, Vec2b, ViewportBuilder};
 use egui_plot::{
-    AxisHints, CoordinatesFormatter, HPlacement, PlotPoint, PlotPoints, Points, Polygon, VPlacement,
+    AxisHints, CoordinatesFormatter, HPlacement, PlotItem, PlotPoint, PlotPoints, Points, Polygon,
+    Text, VPlacement,
 };
 use futures::StreamExt;
 use mmwave_awr::AwrDescriptor;
@@ -18,6 +19,7 @@ use mmwave_core::message::{Id, Tag};
 use mmwave_core::nats::get_store;
 use mmwave_core::point::Point;
 use mmwave_core::pointcloud::PointCloud;
+use mmwave_core::transform::Transform;
 use mmwave_core::{
     address::ServerAddress,
     message::{Message, MessageContent},
@@ -248,12 +250,42 @@ impl eframe::App for MyApp {
                     )
                     .show(ui, |plot_ui| {
                         for (id, (time, pointcloud)) in &self.pointcloud {
+                            let (old_transform, new_transform) = {
+                                (
+                                    if let Some(cfg) = self
+                                        .config_widget
+                                        .config_original
+                                        .descriptors
+                                        .iter()
+                                        .find(|&d| d.id == *id)
+                                    {
+                                        cfg.device_descriptor.transform().unwrap_or_default()
+                                    } else {
+                                        Transform::default()
+                                    },
+                                    if let Some(cfg) = self
+                                        .config_widget
+                                        .config
+                                        .descriptors
+                                        .iter()
+                                        .find(|&d| d.id == *id)
+                                    {
+                                        cfg.device_descriptor.transform().unwrap_or_default()
+                                    } else {
+                                        Transform::default()
+                                    },
+                                )
+                            };
                             let points = PlotPoints::Owned(
                                 pointcloud
                                     .iter()
-                                    .map(|p| PlotPoint {
-                                        x: p.x as f64,
-                                        y: p.y as f64,
+                                    .map(|&p| {
+                                        let p =
+                                            new_transform.apply(old_transform.unapply(p.into()));
+                                        PlotPoint {
+                                            x: p[0] as f64,
+                                            y: p[1] as f64,
+                                        }
                                     })
                                     .collect(),
                             );
@@ -276,18 +308,49 @@ impl eframe::App for MyApp {
 
                         for cfg in self.config_widget.config.descriptors.iter() {
                             if let Some(transform) = cfg.device_descriptor.transform() {
-                                plot_ui.polygon(Polygon::new(PlotPoints::Owned(
-                                    vec![[-0.2, 0.0, 0.0], [0.2, 0.0, 0.0], [0.0, -0.2, 0.0]]
-                                        .iter()
-                                        .map(|&p| {
-                                            let p = transform.apply(p);
-                                            PlotPoint {
-                                                x: p[0] as f64,
-                                                y: p[1] as f64,
-                                            }
-                                        })
-                                        .collect(),
-                                )));
+                                let rgb = self
+                                    .config_widget
+                                    .colors
+                                    .entry(cfg.id)
+                                    .or_insert([1.0, 1.0, 1.0])
+                                    .clone();
+
+                                let color = Color32::from_rgb(
+                                    (rgb[0] * 255.0) as u8,
+                                    (rgb[1] * 255.0) as u8,
+                                    (rgb[2] * 255.0) as u8,
+                                );
+
+                                plot_ui.polygon(
+                                    Polygon::new(PlotPoints::Owned(
+                                        vec![[-0.2, 0.0, 0.0], [0.2, 0.0, 0.0], [0.0, -0.2, 0.0]]
+                                            .iter()
+                                            .map(|&p| {
+                                                let p = transform.apply(p);
+                                                PlotPoint {
+                                                    x: p[0] as f64,
+                                                    y: p[1] as f64,
+                                                }
+                                            })
+                                            .collect(),
+                                    ))
+                                    .stroke(Stroke {
+                                        color,
+                                        ..Default::default()
+                                    }),
+                                );
+
+                                let origin = transform.apply([0.0, 0.0, 0.0]);
+                                plot_ui.text(
+                                    Text::new(
+                                        PlotPoint {
+                                            x: origin[0] as f64,
+                                            y: origin[1] as f64,
+                                        },
+                                        cfg.title(),
+                                    )
+                                    .color(color),
+                                );
                             }
                         }
                     });

@@ -53,25 +53,21 @@ impl Transform {
             [0.0, pitch.sin(), pitch.cos()]
         ];
 
+        // Combine rotations (first yaw, then pitch)
+        let combined_rotation = yaw_matrix.dot(&pitch_matrix);
+
+        // Apply rotation
+        let rotated_point = combined_rotation.dot(&array![point[0], point[1], point[2]]);
+
         // Apply translation
-        let translated_point = array![point[0], point[1], point[2]]
+        let translated_point = array![rotated_point[0], rotated_point[1], rotated_point[2]]
             + array![
                 self.translation[0],
                 self.translation[1],
                 self.translation[2]
             ];
 
-        // Combine rotations (first yaw, then pitch)
-        let combined_rotation = pitch_matrix.dot(&yaw_matrix);
-
-        // Apply rotation
-        let rotated_point = combined_rotation.dot(&array![
-            translated_point[0],
-            translated_point[1],
-            translated_point[2]
-        ]);
-
-        rotated_point
+        translated_point
             .to_owned()
             .into_raw_vec()
             .try_into()
@@ -95,18 +91,22 @@ impl Transform {
             [0.0, -pitch.sin(), pitch.cos()]
         ];
 
-        let rotated_point = inverse_yaw_matrix
-            .dot(&inverse_pitch_matrix)
-            .dot(&array![point[0], point[1], point[2]]);
+        let combined_rotation = inverse_pitch_matrix.dot(&inverse_yaw_matrix);
 
-        let translated_point = array![rotated_point[0], rotated_point[1], rotated_point[2]]
+        let translated_point = array![point[0], point[1], point[2]]
             - array![
                 self.translation[0],
                 self.translation[1],
                 self.translation[2]
             ];
 
-        translated_point
+        let rotated_point = combined_rotation.dot(&array![
+            translated_point[0],
+            translated_point[1],
+            translated_point[2]
+        ]);
+
+        rotated_point
             .to_owned()
             .into_raw_vec()
             .try_into()
