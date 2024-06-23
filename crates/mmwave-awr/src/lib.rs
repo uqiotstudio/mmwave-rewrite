@@ -12,25 +12,26 @@ use async_nats::{
 };
 use async_trait::async_trait;
 use connection::Connection;
+use egui::{TextEdit, Ui};
 use futures::StreamExt;
 use mmwave_core::{
     address::ServerAddress,
     config::Configuration,
-    devices::{DeviceConfig, DeviceDescriptor},
-    message::{Id, Message, Tag},
+    devices::DeviceDescriptor,
+    message::{Id, Message, Tag, TagsToSubject},
     nats::get_store,
-    pointcloud::IntoPointCloud,
+    point::Point,
+    pointcloud::PointCloud,
     transform::Transform,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     any::{Any, TypeId},
-    collections::HashSet,
-    future,
+    fs::File,
     io::Read,
 };
-use std::{error::Error, fmt::Display, ops::Deref, panic, time::Duration};
-use tokio::{pin, select, task::yield_now};
+use std::{error::Error, fmt::Display, panic, time::Duration};
+use tokio::{select, task::yield_now};
 use tracing::{debug, error, info, instrument, warn};
 
 #[derive(
@@ -47,6 +48,7 @@ pub struct AwrDescriptor {
     pub serial: String, // Serial id for the USB device (can be found with lsusb, etc)
     pub model: Model,   // Model of the USB device
     pub config: String, // Configuration string to initialize device
+    config_path: String,
     pub transform: Transform, // Transform of this AWR device
 }
 
@@ -91,11 +93,16 @@ impl<'de> Deserialize<'de> for AwrDescriptor {
     {
         let helper = AwrDescriptorHelper::deserialize(deserializer)?;
 
-        let config = if let Some(c) = helper.config {
-            c
-        } else if let Some(path) = helper.config_path {
-            std::fs::read_to_string(&path).map_err(serde::de::Error::custom)?
-        } else {
+        let mut config_path = "".to_owned();
+        let mut config = None;
+        if let Some(path) = helper.config_path {
+            config_path = path.clone();
+            config = Some(std::fs::read_to_string(&path).map_err(serde::de::Error::custom)?);
+        }
+        if let Some(c) = helper.config {
+            config = Some(c);
+        };
+        let Some(config) = config else {
             return Err(serde::de::Error::custom(
                 "Missing 'config' or 'config_path'",
             ));
@@ -105,6 +112,7 @@ impl<'de> Deserialize<'de> for AwrDescriptor {
             serial: helper.serial,
             model: helper.model,
             config,
+            config_path,
             transform: helper.transform,
         })
     }
@@ -130,6 +138,51 @@ impl DeviceDescriptor for AwrDescriptor {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn ui(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Serial Number:");
+            ui.text_edit_singleline(&mut self.serial);
+        });
+        ui.horizontal(|ui| {
+            ui.label("Model:");
+            egui::ComboBox::from_label("")
+                .selected_text(format!("{:?}", self.model))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.model, Model::AWR1843Boost, "BOOST");
+                    ui.selectable_value(&mut self.model, Model::AWR1843AOP, "AOP");
+                });
+        });
+        self.transform.ui(ui);
+
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                ui.text_edit_singleline(&mut self.config_path);
+                if let Ok(mut file) = File::open(self.config_path.clone()) {
+                    if ui.button("load").clicked() {
+                        self.config.clear();
+                        let _ = file.read_to_string(&mut self.config);
+                    }
+                } else {
+                }
+            });
+            ui.collapsing("config", |ui| {
+                TextEdit::multiline(&mut self.config)
+                    .desired_rows(10)
+                    .desired_width(ui.available_width())
+                    .code_editor()
+                    .show(ui);
+            });
+        });
+    }
+
+    fn transform(&self) -> Option<Transform> {
+        Some(self.transform.clone())
+    }
+
+    fn position(&self) -> Option<Point> {
+        Some(self.transform.apply([0.0, 0.0, 0.0].into()).into())
     }
 }
 
@@ -192,9 +245,9 @@ async fn run_awr(
                      return Ok(());
                  }
             }
-            result = maintain_connection(&mut connection, client) => {
+            result = maintain_connection(&mut connection, client, id.clone(), descriptor.transform.clone()) => {
                 match result {
-                    Ok(_) => { info!("ptcld"); },
+                    Ok(_) => {  },
                     Err(e) => {
                         error!("Unable to publish to client");
                         return Err(e);
@@ -208,6 +261,8 @@ async fn run_awr(
 async fn maintain_connection(
     connection: &mut Connection,
     client: &Client,
+    id: Id,
+    transform: Transform,
 ) -> Result<(), Box<dyn Error>> {
     yield_now().await;
     let frame = match connection.read_frame() {
@@ -220,13 +275,21 @@ async fn maintain_connection(
             other => return Err(Box::new(other)),
         },
     };
-    let message = Message {
-        content: mmwave_core::message::MessageContent::PointCloud(frame.into_point_cloud()),
-        tags: HashSet::from([Tag::Pointcloud]),
+    let mut message = Message {
+        content: mmwave_core::message::MessageContent::PointCloud(
+            Into::<PointCloud>::into(frame)
+                .points
+                .iter_mut()
+                .map(|&mut pt| transform.apply(pt.into()).into())
+                .collect::<Vec<Point>>()
+                .into(),
+        ),
+        tags: Vec::from([Tag::Pointcloud, Tag::FromId(id)]),
         timestamp: chrono::Utc::now(),
     };
+    let subject = message.tags.clone().to_subject();
     let payload = bincode::serialize(&message)?.into();
-    client.publish("pointcloud.awr", payload).await?;
+    client.publish(subject, payload).await?;
     Ok(())
 }
 

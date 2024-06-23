@@ -19,3 +19,5 @@ regex.workspace = true
 serialport.workspace = true
 udev.workspace = true
 chrono.workspace = true
+egui.workspace = true
+egui_file.workspace = true

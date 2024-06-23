@@ -1,9 +1,10 @@
 use async_trait::async_trait;
+use egui::Ui;
 use serde::{Deserialize, Serialize};
 use std::{any::Any, hash::Hash, time::Duration};
 use tracing::{info, instrument, warn};
 
-use crate::{address::ServerAddress, message::Id};
+use crate::{address::ServerAddress, message::Id, point::Point, transform::Transform};
 
 #[derive(Serialize, Deserialize)]
 pub struct DeviceConfig {
@@ -48,6 +49,11 @@ impl DeviceConfig {
     pub async fn init(self, address: ServerAddress) {
         self.device_descriptor.init(self.id, address).await
     }
+
+    pub fn ui(&mut self, ui: &mut Ui) {
+        self.id.ui(ui);
+        self.device_descriptor.ui(ui);
+    }
 }
 
 #[typetag::serde(tag = "type", content = "value")]
@@ -58,6 +64,20 @@ pub trait DeviceDescriptor: Send + Sync + Any {
     fn as_any(&self) -> &dyn Any;
     fn title(&self) -> String {
         "Untitled Device".to_string()
+    }
+    fn ui(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Unimplemented config for this descriptor");
+        });
+    }
+
+    fn transform(&self) -> Option<Transform> {
+        None
+    }
+
+    /// if the descriptor has a spatial position, return it
+    fn position(&self) -> Option<Point> {
+        None
     }
 }
 

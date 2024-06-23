@@ -62,6 +62,7 @@
             rustup
             natscli
             nats-server
+            trunk
           ] ++ libs;
         };
       });

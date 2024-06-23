@@ -17,10 +17,6 @@ struct Args {
     #[arg(short, long, default_value_t = false)]
     pub debug: bool,
 
-    /// Enable relay logging
-    #[arg(short, long, default_value_t = false)]
-    pub log_relay: bool,
-
     /// Whether to use tracing
     #[arg(short, long, default_value_t = false)]
     pub tracing: bool,
@@ -29,7 +25,7 @@ struct Args {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     if args.tracing {
-        mmwave_core::logging::enable_tracing(args.debug, args.log_relay);
+        mmwave_core::logging::enable_tracing(args.debug);
     }
 
     info!("beginning broadcast");

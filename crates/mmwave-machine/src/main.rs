@@ -13,7 +13,7 @@ use mmwave_core::{
     message::Id,
     nats::get_store,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::{error::Error, time::Duration};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, instrument, Instrument};
@@ -22,30 +22,8 @@ use tracing::{debug, error, info, instrument, Instrument};
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     if args.tracing {
-        enable_tracing(args.debug, args.log_relay);
+        enable_tracing(args.debug);
     }
-
-    let config = Configuration {
-        descriptors: vec![
-            DeviceConfig {
-                id: Id::Device(0, 0),
-                device_descriptor: Box::new(EmptyDeviceDescriptor),
-            },
-            DeviceConfig {
-                id: Id::Device(0, 1),
-                device_descriptor: Box::new(AwrDescriptor {
-                    serial: "00E23E8E".to_string(),
-                    model: Model::AWR1843AOP,
-                    config: "".to_string(),
-                    transform: mmwave_core::transform::Transform {
-                        translation: [0.0, 0.0, 0.0],
-                        orientation: [0.0, 0.0],
-                    },
-                }),
-            },
-        ],
-    };
-    info!("{}", serde_json::to_string(&config)?);
 
     let mut address = ServerAddress::new(args.ip, args.port).await;
 
@@ -121,17 +99,27 @@ fn update_devices(
     // remove finished tasks
     devices.retain(|_, j| !j.is_finished());
 
-    for deviceConfig in config.descriptors {
-        if deviceConfig.id.to_machine() != args.machine_id {
+    let mut removals: HashSet<_> = devices.keys().cloned().collect();
+
+    for device_config in config.descriptors {
+        if device_config.id.to_machine() != args.machine_id {
             // we only care about configs for this machine
             continue;
         }
 
         // spawn tasks if they dont exist
-        let handle = devices.entry(deviceConfig.clone()).or_insert_with(|| {
+        removals.remove(&device_config);
+        let handle = devices.entry(device_config.clone()).or_insert_with(|| {
             info!("spawned new task");
-            let future = deviceConfig.clone().init(address);
+            let future = device_config.clone().init(address);
             tokio::task::spawn(future.instrument(tracing::Span::current()))
         });
+    }
+
+    for removal in removals {
+        let Some(dev) = devices.remove(&removal) else {
+            continue;
+        };
+        dev.abort();
     }
 }

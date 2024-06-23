@@ -20,3 +20,4 @@ typetag.workspace = true
 async-trait.workspace = true
 ndarray.workspace = true
 serde_json.workspace = true
+egui.workspace = true

@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use egui::Ui;
 use ndarray::array;
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +21,21 @@ impl Display for Transform {
 }
 
 impl Transform {
+    pub fn ui(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Position");
+            for i in 0..3 {
+                ui.add(egui::DragValue::new(&mut self.translation[i]).speed(0.05));
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Orientation");
+            for i in 0..2 {
+                ui.drag_angle(&mut self.orientation[i]);
+            }
+        });
+    }
+
     pub fn apply(&self, point: [f32; 3]) -> [f32; 3] {
         let yaw = self.orientation[0];
         let pitch = self.orientation[1];

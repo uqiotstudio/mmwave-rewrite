@@ -10,4 +10,5 @@ pub mod address;
 pub mod config;
 pub mod logging;
 pub mod nats;
+pub mod point;
 pub mod transform;

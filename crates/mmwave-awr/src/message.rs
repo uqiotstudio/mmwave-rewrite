@@ -1,9 +1,6 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use mmwave_core::pointcloud::{IntoPointCloud, PointCloud, PointMetaData};
-use serde::{Deserialize, Serialize};
-
 use super::error::ParseError;
+use mmwave_core::pointcloud::PointCloud;
+use serde::{Deserialize, Serialize};
 
 pub trait FromBytes
 where
@@ -353,22 +350,14 @@ impl FromBytes for TlvType {
     }
 }
 
-impl IntoPointCloud for Frame {
-    fn into_point_cloud(self) -> PointCloud {
+impl Into<PointCloud> for Frame {
+    fn into(self) -> PointCloud {
         // dbg!(self.frame_header.time);
         for tlv in self.frame_body.tlvs {
             if let TlvBody::PointCloud(pc) = tlv.tlv_body {
                 return PointCloud {
                     time: chrono::Utc::now(),
-                    // time: self.frame_header.time as u128,
-                    metadata: vec![
-                        PointMetaData {
-                            label: Some("mmwave".to_owned()),
-                            device: Some(format!("{}", self.frame_header.version))
-                        };
-                        pc.len()
-                    ],
-                    points: pc,
+                    points: pc.iter().map(|&p| p.into()).collect(),
                     ..Default::default()
                 };
             }
