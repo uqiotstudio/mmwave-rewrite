@@ -12,6 +12,7 @@ use mmwave_core::{
     message::Id,
     transform::Transform,
 };
+use mmwave_recorder::RecordingDescriptor;
 use tracing::info;
 
 #[derive(Default)]
@@ -38,16 +39,22 @@ impl ConfigWidget {
         });
         ui.separator();
         ui.horizontal(|ui| {
-            if ui.button("new test device").clicked() {
-                self.config.descriptors.push(DeviceConfig {
-                    id: Id::Device(0, 0),
-                    device_descriptor: Box::new(EmptyDeviceDescriptor),
-                });
-            }
-            if ui.button("new awr device").clicked() {
+            if ui.button("new awr").clicked() {
                 self.config.descriptors.push(DeviceConfig {
                     id: Id::Device(0, 0),
                     device_descriptor: Box::new(AwrDescriptor::default()),
+                });
+            }
+            if ui.button("new recorder").clicked() {
+                self.config.descriptors.push(DeviceConfig {
+                    id: Id::Device(0, 0),
+                    device_descriptor: Box::new(RecordingDescriptor::default()),
+                });
+            }
+            if ui.button("new empty").clicked() {
+                self.config.descriptors.push(DeviceConfig {
+                    id: Id::Device(0, 0),
+                    device_descriptor: Box::new(EmptyDeviceDescriptor),
                 });
             }
         });

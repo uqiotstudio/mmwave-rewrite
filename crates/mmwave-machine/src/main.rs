@@ -1,9 +1,10 @@
 mod args;
 
 use args::Args;
+use async_ctrlc::CtrlC;
 use async_nats::jetstream;
 use clap::Parser;
-use futures::StreamExt;
+use futures::{future, task::noop_waker, Future, FutureExt, StreamExt};
 use mmwave_awr::{AwrDescriptor, Model};
 use mmwave_core::{
     address::ServerAddress,
@@ -13,9 +14,13 @@ use mmwave_core::{
     message::Id,
     nats::get_store,
 };
-use std::collections::{HashMap, HashSet};
+use mmwave_recorder::RecordingDescriptor;
+use std::{
+    collections::{HashMap, HashSet},
+    task::Context,
+};
 use std::{error::Error, time::Duration};
-use tokio::task::JoinHandle;
+use tokio::{signal, sync::watch, task::JoinHandle};
 use tracing::{debug, error, info, instrument, Instrument};
 
 #[tokio::main]
@@ -30,6 +35,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         if let Err(e) = handle_nats(address.clone(), args.clone()).await {
             error!(error=%e, "nats exited with error")
+        } else {
+            // no error, we can safely quit
+            return Ok(());
         }
         info!("Attempting to re-establish connection");
         tokio::time::sleep(Duration::from_millis(1000)).await;
@@ -62,30 +70,52 @@ async fn handle_nats(address: ServerAddress, args: Args) -> Result<(), Box<dyn E
         };
     }
 
+    let (shutdown_tx, mut shutdown_rx) = watch::channel(());
     let mut entries = store.watch("config").await?;
 
-    info!("Watching for config updates");
-    while let Some(config) = entries.next().await {
-        match config {
-            Err(e) => {
-                error!(error=%e, "something went wrong watching for config updates");
-                break;
-            }
-            Ok(entry) => {
-                info!("New config inbound");
-                debug!(entry=?entry, "Inbound config");
-                let config = match serde_json::from_slice(&entry.value) {
-                    Ok(config) => config,
-                    Err(e) => {
-                        error!(error=?e, "Failed to parse config");
-                        debug!(entry=?entry, "The incorrect entry");
-                        continue;
-                    }
-                };
-                update_devices(&mut devices, config, address.clone(), args.clone());
+    let mut config_task = tokio::spawn(async move {
+        info!("Watching for config updates");
+        while let Some(config) = entries.next().await {
+            match config {
+                Err(e) => {
+                    error!(error=%e, "something went wrong watching for config updates");
+                    break;
+                }
+                Ok(entry) => {
+                    info!("New config inbound");
+                    debug!(entry=?entry, "Inbound config");
+                    let config = match serde_json::from_slice(&entry.value) {
+                        Ok(config) => config,
+                        Err(e) => {
+                            error!(error=?e, "Failed to parse config");
+                            debug!(entry=?entry, "The incorrect entry");
+                            continue;
+                        }
+                    };
+                    update_devices(&mut devices, config, address.clone(), args.clone());
+                }
             }
         }
+    });
+
+    let shutdown_task = tokio::spawn(async move {
+        if signal::ctrl_c().await.is_ok() {
+            info!("Received Ctrl-C, initiating shutdown");
+            let _ = shutdown_tx.send(());
+        }
+    });
+
+    tokio::select! {
+        _ = &mut config_task => {},
+        _ = shutdown_rx.changed() => {
+            info!("Shutdown signal received, cleaning up");
+            config_task.abort();
+        },
     }
+
+    info!("Shutting down gracefully");
+
+    shutdown_task.await?;
 
     Ok(())
 }

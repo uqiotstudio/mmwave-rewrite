@@ -40,6 +40,9 @@ egui = "0.27.0"
 egui_plot = "0.27.0"
 egui_file = "0.17.0"
 wasm-bindgen-futures = "0.4"
+sqlx = { version = "0.7", features = [ "runtime-tokio", "tls-native-tls", "postgres"] }
+prost = "0.12"
+async-ctrlc = "1.2.0"
 
 # [build-dependencies]
 # cc = "1.0"
