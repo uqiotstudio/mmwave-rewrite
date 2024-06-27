@@ -15,15 +15,6 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     cargo2nix.url = "github:cargo2nix/cargo2nix/release-0.11.0";
-    home-manager = {
-      url = "github:nix-community/home-manager";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    nixos-hardware.url = "github:NixOS/nixos-hardware/master";
-    nixos-generators = {
-      url = "github:nix-community/nixos-generators";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     nix-formatter-pack.url = "github:Gerschtli/nix-formatter-pack";
     flake-utils.url = "github:numtide/flake-utils";
   };
@@ -45,9 +36,6 @@
         machine = (rustPkgs.workspace.mmwave-machine {});
         dashboard  = (rustPkgs.workspace.mmwave-dashboard {});
       };
-      generators = (import ./generator.nix { 
-        inherit self nixpkgs inputs mmwave;
-      });
     in {
       formatter = inputs.nix-formatter-pack.lib.mkFormatter {
         pkgs = nixpkgs.legacyPackages.${system};
@@ -58,8 +46,6 @@
           statix.enable = true;
         };
       };
-
-      generators = generators;
 
       packages = mmwave;
 
