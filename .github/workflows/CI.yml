@@ -2,76 +2,22 @@ name: Upload Release Asset
 
 on:
   push:
-    tags:
-      - 'v*'
-
+    branches:
+    - main
 jobs:
   build:
     name: Build and Release Binaries
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
-
-      - name: Configure Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
-
-      - name: Build mmwave-dashboard
-        run: nix build .#packages.x86_64-linux.mmwave-dashboard
-
-      - name: Build mmwave-machine
-        run: nix build .#packages.x86_64-linux.mmwave-machine
-
-      - name: Build mmwave-discovery
-        run: nix build .#packages.x86_64-linux.mmwave-discovery
-
-      - name: Archive Binaries
-        run: |
-          mkdir -p binaries
-          cp ./result/bin/mmwave-dashboard binaries/
-          cp ./result/bin/mmwave-machine binaries/
-          cp ./result/bin/mmwave-discovery binaries/
-
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v25
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          draft: false
-          prerelease: false
-
-      - name: Upload mmwave-dashboard binary
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          nix_path: nixpkgs=channel:nixos-unstable
+      - uses: DeterminateSystems/magic-nix-cache-action@v2
+      - uses: cachix/cachix-action@v14
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: binaries/mmwave-dashboard
-          asset_name: mmwave-dashboard
-          asset_content_type: application/octet-stream
-
-      - name: Upload mmwave-machine binary
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: binaries/mmwave-machine
-          asset_name: mmwave-machine
-          asset_content_type: application/octet-stream
-
-      - name: Upload mmwave-discovery binary
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: binaries/mmwave-discovery
-          asset_name: mmwave-discovery
-          asset_content_type: application/octet-stream
+          name: mycache
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      - run: nix build .#packages.x86_64-linux.mmwave-dashboard
+      - run: nix build .#packages.x86_64-linux.mmwave-machine
+      - run: nix build .#packages.x86_64-linux.mmwave-discover
