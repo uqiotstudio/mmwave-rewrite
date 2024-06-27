@@ -8,8 +8,8 @@ use configuration::ConfigWidget;
 use eframe::egui;
 use egui::{Color32, Context, Stroke, Vec2b, ViewportBuilder};
 use egui_plot::{
-    AxisHints, CoordinatesFormatter, HPlacement, PlotItem, PlotPoint, PlotPoints, Points, Polygon,
-    Text, VPlacement,
+    AxisHints, CoordinatesFormatter, HPlacement, Line, PlotItem, PlotPoint, PlotPoints, Points,
+    Polygon, Text, VPlacement,
 };
 use futures::StreamExt;
 use mmwave_awr::AwrDescriptor;
@@ -321,24 +321,43 @@ impl eframe::App for MyApp {
                                     (rgb[2] * 255.0) as u8,
                                 );
 
-                                plot_ui.polygon(
-                                    Polygon::new(PlotPoints::Owned(
-                                        vec![[-0.2, 0.0, 0.0], [0.2, 0.0, 0.0], [0.0, -0.2, 0.0]]
-                                            .iter()
-                                            .map(|&p| {
-                                                let p = transform.apply(p);
-                                                PlotPoint {
-                                                    x: p[0] as f64,
-                                                    y: p[1] as f64,
-                                                }
-                                            })
-                                            .collect(),
-                                    ))
-                                    .stroke(Stroke {
-                                        color,
-                                        ..Default::default()
-                                    }),
-                                );
+                                let polygons = vec![
+                                    vec![[-1.0, 1.0, -1.0], [1.0, 1.0, -1.0], [0.0, 0.0, 0.0]],
+                                    vec![[-1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [0.0, 0.0, 0.0]],
+                                    vec![
+                                        [-1.0, 1.0, 1.0],
+                                        [1.0, 1.0, 1.0],
+                                        [1.0, 1.0, -1.0],
+                                        [-1.0, 1.0, -1.0],
+                                    ],
+                                    vec![[-1.0, 1.0, 1.0], [-1.0, 1.0, -1.0], [0.0, 0.0, 0.0]],
+                                    vec![[1.0, 1.0, 1.0], [1.0, 1.0, -1.0], [0.0, 0.0, 0.0]],
+                                ];
+
+                                for mut polygon in polygons {
+                                    plot_ui.polygon(
+                                        Polygon::new(PlotPoints::Owned(
+                                            polygon
+                                                .iter_mut()
+                                                .map(|p| {
+                                                    p[0] *= 0.05;
+                                                    p[1] *= 0.05;
+                                                    p[2] *= 0.05;
+
+                                                    let p = transform.apply(*p);
+                                                    PlotPoint {
+                                                        x: p[0] as f64,
+                                                        y: p[1] as f64,
+                                                    }
+                                                })
+                                                .collect(),
+                                        ))
+                                        .stroke(Stroke {
+                                            color,
+                                            ..Default::default()
+                                        }),
+                                    );
+                                }
 
                                 let origin = transform.apply([0.0, 0.0, 0.0]);
                                 plot_ui.text(

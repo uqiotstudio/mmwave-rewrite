@@ -4,18 +4,117 @@
     crane.url = "github:ipetkov/crane";
     crane.inputs.nixpkgs.follows = "nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        flake-utils.follows = "flake-utils";
+      };
+    };
   };
+  outputs = { self, nixpkgs, flake-utils, crane, rust-overlay, ... }:
+  flake-utils.lib.eachSystem ["x86_64-linux"] (localSystem:
+    let
+      crossSystem = "aarch64-linux";
+      pkgs = import nixpkgs {
+        inherit localSystem crossSystem;
+        overlays = [ (import rust-overlay) ];
+      };
+      rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+        targets = [ "aarch64-unknown-linux-gnu" ];
+      };
+      craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
+      crateExpression =
+        { openssl
+        , libiconv
+        , lib
+        , pkg-config
+        , qemu
+        , stdenv
+        , udev
+        , dbus
+        , wayland
+        , xorg
+        , libGL
+        , libxkbcommon
+        , glibc
+        }:
+        let 
+        commonArgs = {
+          src = craneLib.cleanCargoSource ./.;
+          strictDeps = true;
+          nativeBuildInputs = [
+            pkg-config
+            stdenv.cc
+          ] ++ lib.optionals stdenv.buildPlatform.isDarwin [
+            libiconv
+          ];
+          depsBuildBuild = [
+            qemu
+          ];
+          buildInputs = [
+            openssl
+            libGL
+            libxkbcommon
+            udev
+            wayland
+            xorg.libX11
+            xorg.libXcursor
+            xorg.libXi
+            xorg.libXrandr
+            dbus
+          ];
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "${stdenv.cc.targetPrefix}cc";
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER = "qemu-aarch64";
+          cargoExtraArgs = "--target aarch64-unknown-linux-gnu";
+          CARGO_BUILD_TARGET = "aarch64-unknown-linux-gnu";
+          rustflags = "-c target-feature=+crt-static";
 
-  outputs = { self, nixpkgs, flake-utils, crane, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs { inherit system; };
-        craneLib = crane.lib.${system};
-        libs = with pkgs; [
+          HOST_CC = "${stdenv.cc.nativePrefix}cc";
+          TARGET_CC = "${stdenv.cc.targetPrefix}cc";
+        };
+        in
+        {
+          mmwave-discovery = craneLib.buildPackage commonArgs // {
+            pname = "mmwave-discovery";
+            cargoExtraArgs = "-p mmwave-discovery";
+          };
+          mmwave-machine = craneLib.buildPackage commonArgs // {
+            pname = "mmwave-machine";
+            cargoExtraArgs = "-p mmwave-machine";
+          };
+          mmwave-dashboard = craneLib.buildPackage commonArgs // { 
+            pname = "mmwave-dashboard";
+            cargoExtraArgs = "-p mmwave-dashboard";
+          };
+        };
+
+      mmwave = pkgs.callPackage crateExpression { };
+    in
+    {
+      checks = {
+        inherit mmwave;
+      };
+
+      packages = mmwave;
+
+      apps.mmwave = flake-utils.lib.mkApp {
+        drv = pkgs.writeScriptBin "mmwave-discovery" ''
+          ${pkgs.pkgsBuildBuild.qemu}/bin/qemu-aarch64 ${mmwave}/bin/mmwave-discovery
+        # '';
+      };
+
+      devShells.default = craneLib.devShell {
+        checks = self.checks.${localSystem};
+
+        packages = with pkgs.pkgsBuildHost; [
+          rust-analyzer
+          natscli
+          nats-server
+          openssl
           libGL
           libxkbcommon
           udev
-          openssl
           wayland
           xorg.libX11
           xorg.libXcursor
@@ -24,46 +123,7 @@
           dbus
           pkg-config
         ];
-        libPath = pkgs.lib.makeLibraryPath libs;
-        my-crate = craneLib.buildPackage {
-          src = craneLib.cleanCargoSource (craneLib.path ./.);
-          doCheck = true;
-          name = "mmwave-dash";
-          nativeBuildInputs = [ pkgs.makeWrapper ];
-          buildInputs = with pkgs; [
-            xorg.libxcb
-          ];
-          postInstall = ''
-            wrapProgram "$out/bin/mmwave-dash" --prefix LD_LIBRARY_PATH : "${libPath}"
-          '';
-        };
-      in
-      {
-        checks = {
-          inherit my-crate;
-        };
-
-        packages.default = my-crate;
-
-        app.default = flake-utils.lib.mkApp {
-          drv = my-crate;
-        };
-
-        devShell = craneLib.devShell {
-          checks = self.checks.${system};
-
-          RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
-          LD_LIBRARY_PATH = libPath;
-
-          packages = with pkgs; [
-            rustfmt
-            rust-analyzer
-            rustPackages.clippy
-            rustup
-            natscli
-            nats-server
-            trunk
-          ] ++ libs;
-        };
-      });
+      };
+    }
+  );
 }

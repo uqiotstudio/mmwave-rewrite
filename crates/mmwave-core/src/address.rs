@@ -1,4 +1,3 @@
-use reqwest::Url;
 use searchlight::{
     discovery::{DiscoveryBuilder, DiscoveryEvent},
     dns::rr::RData,
@@ -36,14 +35,6 @@ impl ServerAddress {
 
     pub fn address(&self) -> SocketAddr {
         self.address
-    }
-
-    pub fn url(&self) -> Url {
-        Url::parse(&format!("http://{}", self.address())).expect("Unable to parse url")
-    }
-
-    pub fn url_ws(&self) -> Url {
-        Url::parse(&format!("ws:///{}/ws", self.address())).expect("Unable to parse websocket url")
     }
 }
 

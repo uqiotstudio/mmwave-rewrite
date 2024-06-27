@@ -5,7 +5,7 @@ zed_device/cpp/build
 outputs
 js_store
 nats
-
+result
 
 # Added by cargo
 #
