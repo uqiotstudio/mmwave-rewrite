@@ -13,12 +13,11 @@ jobs:
       - uses: cachix/install-nix-action@v25
         with:
           nix_path: nixpkgs=channel:nixos-unstable
+      - uses: DeterminateSystems/magic-nix-cache-action@v2
       - uses: cachix/cachix-action@v14
         with:
           name: mycache
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@v2
       - run: nix build .#packages.x86_64-linux.mmwave-dashboard
       - run: nix build .#packages.x86_64-linux.mmwave-machine
-      - run: nix build .#packages.x86_64-linux.mmwave-discovery
-
+      - run: nix build .#packages.x86_64-linux.mmwave-discover
