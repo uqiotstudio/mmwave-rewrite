@@ -18,6 +18,6 @@ jobs:
         with:
           name: mycache
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - run: nix build .#packages.x86_64-linux.mmwave-dashboard
-      - run: nix build .#packages.x86_64-linux.mmwave-machine
-      - run: nix build .#packages.x86_64-linux.mmwave-discover
+      - run: nix build .#packages.x86_64-linux.aarch64-linux.mmwave-dashboard
+      - run: nix build .#packages.x86_64-linux.aarch64-linux.mmwave-machine
+      - run: nix build .#packages.x86_64-linux.aarch64-linux.mmwave-discover
