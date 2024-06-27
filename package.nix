@@ -11,7 +11,7 @@
 , xorg
 , libGL
 , libxkbcommon
-, crossSystem
+, system ? builtins.currentSystem
 }:
 let
   targets = {
@@ -29,7 +29,7 @@ let
       CARGO_BUILD_TARGET = "x86_64-unknown-linux-gnu";
     };
   };
-  commonArgs = targets.${crossSystem} // {
+  commonArgs = targets.${system} // {
     src = craneLib.cleanCargoSource ./.;
     strictDeps = true;
     nativeBuildInputs = [

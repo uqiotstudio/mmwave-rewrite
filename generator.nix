@@ -1,4 +1,4 @@
-{ nixpkgs, inputs, self, mmwave, forAllSystems, ... }:
+{ nixpkgs, inputs, self, mmwave, ... }:
 let
   nodes = [
     {
@@ -12,7 +12,7 @@ let
       ];
     }
   ];
-  buildGenerator = node: mmwave:
+  buildGenerator = node:
     inputs.nixos-generators.nixosGenerate {
       inherit (node) system;
       inherit (node) format;
@@ -21,13 +21,13 @@ let
         inherit nixpkgs;
         inherit self;
         nodeHostName = node.name;
-        mmwave = mmwave.${node.system};
+        mmwave = mmwave;
         inherit inputs;
       };
     };
-  buildConfiguration = node: mmwave:
+  buildConfiguration = node:
     let
-      generated = buildGenerator node mmwave;
+      generated = buildGenerator node;
     in
     nixpkgs.lib.nixosSystem {
       inherit (generated) system;
@@ -36,15 +36,15 @@ let
     };
 in
 {
-  generators = forAllSystems (system: builtins.listToAttrs (
+  generators = builtins.listToAttrs (
     map
-      (node: { inherit (node) name; value = buildGenerator node mmwave.${system}; })
+      (node: { inherit (node) name; value = buildGenerator node; })
       nodes
-  ));
+  );
 
-  nixosConfigurations = forAllSystems (system: builtins.listToAttrs (
+  nixosConfigurations = builtins.listToAttrs (
     map
-      (node: { inherit (node) name; value = buildConfiguration node mmwave.${system}; })
+      (node: { inherit (node) name; value = buildConfiguration node; })
       nodes
-  ));
+  );
 }
