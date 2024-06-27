@@ -71,17 +71,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = async_nats::connect(address.address().to_string()).await?;
     let jetstream = jetstream::new(client.clone());
 
+    info!("Connected nats");
+
     // Listen for config updates on a seperate task
     let store = get_store(jetstream).await?;
     let entries = store.watch("config").await?;
 
-    let _ = eframe::run_native(
+    info!("Connected to store");
+
+    let result = eframe::run_native(
         "Pointcloud Listener",
         eframe::NativeOptions {
             viewport: ViewportBuilder::default().with_title("mmwave-dashboard"),
             ..Default::default()
         },
         Box::new(|cc| {
+            info!("Starting eframe");
             // Listen for pointclouds and forward them to rx
             let frame = cc.egui_ctx.clone();
             let (ptc_tx, ptc_rx) = mpsc::channel(100);
@@ -115,6 +120,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
         }),
     );
+
+    error!(result=?result, "Eframe Failed");
 
     Ok(())
 }

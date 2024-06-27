@@ -53,10 +53,10 @@
             qemu
           ];
           buildInputs = [
-            openssl
             libGL
             libxkbcommon
             udev
+            openssl
             wayland
             xorg.libX11
             xorg.libXcursor
@@ -90,6 +90,20 @@
         };
 
       mmwave = pkgs.callPackage crateExpression { };
+
+      libs = with pkgs.pkgsBuildHost; [
+        libGL
+        libxkbcommon
+        udev
+        openssl
+        wayland
+        xorg.libX11
+        xorg.libXcursor
+        xorg.libXi
+        xorg.libXrandr
+        dbus
+        pkg-config
+      ];
     in
     {
       checks = {
@@ -107,21 +121,13 @@
       devShells.default = craneLib.devShell {
         checks = self.checks.${localSystem};
 
-        packages = with pkgs.pkgsBuildHost; [
+        RUST_SRC_PATH = pkgs.pkgsBuildHost.rustPlatform.rustLibSrc;
+        LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath libs;
+
+        packages = with pkgs.pkgsBuildHost; libs ++ [
           rust-analyzer
           natscli
           nats-server
-          openssl
-          libGL
-          libxkbcommon
-          udev
-          wayland
-          xorg.libX11
-          xorg.libXcursor
-          xorg.libXi
-          xorg.libXrandr
-          dbus
-          pkg-config
         ];
       };
     }
