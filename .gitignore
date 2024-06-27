@@ -6,6 +6,7 @@ outputs
 js_store
 nats
 result
+temp
 
 # Added by cargo
 #
