@@ -48,7 +48,7 @@ pub struct AwrDescriptor {
     pub serial: String, // Serial id for the USB device (can be found with lsusb, etc)
     pub model: Model,   // Model of the USB device
     pub config: String, // Configuration string to initialize device
-    config_path: String,
+    pub config_path: String,
     pub transform: Transform, // Transform of this AWR device
 }
 
@@ -97,7 +97,9 @@ impl<'de> Deserialize<'de> for AwrDescriptor {
         let mut config = None;
         if let Some(path) = helper.config_path {
             config_path = path.clone();
-            config = Some(std::fs::read_to_string(&path).map_err(serde::de::Error::custom)?);
+            if std::fs::metadata(path.clone()).is_ok() {
+                config = Some(std::fs::read_to_string(&path).map_err(serde::de::Error::custom)?);
+            }
         }
         if let Some(c) = helper.config {
             config = Some(c);
