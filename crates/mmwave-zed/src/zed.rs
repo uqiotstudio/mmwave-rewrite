@@ -104,13 +104,16 @@ impl Zed {
         for body in bodies_slice.iter() {
             let keypoints_slice =
                 unsafe { std::slice::from_raw_parts(body.points, body.num_points as usize) };
-            let Some(keypoints) = keypoints_slice.iter().nth(1).map(|kp| {
-                vec![Point3D {
+                for kp in keypoints_slice.iter() {
+                    println!("    Keypoint: ({}, {}, {})", kp.x, kp.y, kp.z);
+                }
+            let (keypoints) = keypoints_slice.iter().map(|kp| {
+                Point3D {
                     x: kp.x,
                     y: kp.z,
                     z: kp.y,
-                }]
-            }) else {
+                }
+            }).collect() else {
                 continue;
             };
 

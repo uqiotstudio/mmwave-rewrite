@@ -158,7 +158,7 @@ async fn maintain_connection(
 ) -> Result<(), Box<dyn std::error::Error>> {
     yield_now().await;
     if let Some(message) = zed.try_read() {
-        let mut message = Message {
+        let message = Message {
             content: mmwave_core::message::MessageContent::PointCloud(
                 mmwave_core::pointcloud::PointCloud { 
                     time: chrono::Utc::now(), 
