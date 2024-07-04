@@ -10,6 +10,7 @@ clap.workspace = true
 futures.workspace = true
 mmwave-core = { path = "../mmwave-core" }
 mmwave-awr = { path = "../mmwave-awr" }
+mmwave-zed = { path = "../mmwave-zed" }
 mmwave-recorder = {  path = "../mmwave-recorder" }
 serde_json.workspace = true
 tokio.workspace = true

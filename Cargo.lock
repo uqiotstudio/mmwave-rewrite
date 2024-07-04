@@ -1774,6 +1774,7 @@ dependencies = [
  "mmwave-awr",
  "mmwave-core",
  "mmwave-recorder",
+ "mmwave-zed",
  "serde",
  "serde_json",
  "tokio",
@@ -1802,6 +1803,7 @@ dependencies = [
  "mmwave-awr",
  "mmwave-core",
  "mmwave-recorder",
+ "mmwave-zed",
  "serde_json",
  "tokio",
  "tracing",
@@ -1817,6 +1819,26 @@ dependencies = [
  "chrono",
  "egui",
  "futures",
+ "mmwave-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "typetag",
+]
+
+[[package]]
+name = "mmwave-zed"
+version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "async-trait",
+ "bincode",
+ "cc",
+ "chrono",
+ "egui",
+ "futures",
+ "libc",
  "mmwave-core",
  "serde",
  "serde_json",
@@ -3949,16 +3971,6 @@ name = "xml-rs"
 version = "0.8.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "791978798f0597cfc70478424c2b4fdc2b7a8024aaff78497ef00f24ef674193"
-
-[[package]]
-name = "zed_device"
-version = "0.1.0"
-dependencies = [
- "cc",
- "libc",
- "serde",
- "serde_json",
-]
 
 [[package]]
 name = "zerocopy"

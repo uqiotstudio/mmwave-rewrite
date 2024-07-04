@@ -13,6 +13,7 @@ use mmwave_core::{
     transform::Transform,
 };
 use mmwave_recorder::RecordingDescriptor;
+use mmwave_zed::ZedDescriptor;
 use tracing::info;
 
 #[derive(Default)]
@@ -49,6 +50,12 @@ impl ConfigWidget {
                 self.config.descriptors.push(DeviceConfig {
                     id: Id::Device(0, 0),
                     device_descriptor: Box::new(RecordingDescriptor::default()),
+                });
+            }
+            if ui.button("new zed").clicked() {
+                self.config.descriptors.push(DeviceConfig {
+                    id: Id::Device(0, 0),
+                    device_descriptor: Box::new(ZedDescriptor::default()),
                 });
             }
             if ui.button("new empty").clicked() {

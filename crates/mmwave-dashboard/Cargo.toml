@@ -20,4 +20,5 @@ egui_plot.workspace = true
 serde_json.workspace = true
 mmwave-awr = { path = "../mmwave-awr" }
 mmwave-recorder = { path = "../mmwave-recorder" }
+mmwave-zed = { path = "../mmwave-zed" }
 chrono.workspace = true

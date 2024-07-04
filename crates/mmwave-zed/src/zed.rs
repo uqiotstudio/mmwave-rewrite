@@ -3,14 +3,24 @@ extern crate libc;
 use serde::{Deserialize, Serialize};
 
 use libc::{c_void, size_t};
-use std::os::raw::c_float;
+use std::{ops::Deref, os::raw::c_float};
 
 #[repr(C)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct Point3D {
     pub x: c_float,
     pub y: c_float,
     pub z: c_float,
+}
+
+impl From<Point3D> for [f32; 3] {
+    fn from(value: Point3D) -> Self {
+        [
+            value.x,
+            value.y,
+            value.z
+        ]
+    }
 }
 
 #[repr(C)]

@@ -13,6 +13,7 @@ use egui_plot::{
 };
 use futures::StreamExt;
 use mmwave_awr::AwrDescriptor;
+use mmwave_zed::ZedDescriptor;
 use mmwave_core::config::Configuration;
 use mmwave_core::logging::enable_tracing;
 use mmwave_core::message::{Id, Tag};
