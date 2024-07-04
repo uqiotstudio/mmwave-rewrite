@@ -16,12 +16,12 @@
           "config_path": "./config_files/profile_AWR1843_AOP.cfg",
           "transform": {
             "translation": [
-              0.7,
+              0.3,
               -0.15,
               0.0
             ],
             "orientation": [
-              -0.19198622,
+              1.0297443,
               0.0
             ]
           }

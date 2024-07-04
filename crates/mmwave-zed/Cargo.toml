@@ -1,0 +1,21 @@
+[package]
+name = "zed_device"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]
+cc = "1.0"
+
+[profile.release]
+lto = true
+
+[build]
+script = "build.rs"
+
+[features]
+zed_camera = []
