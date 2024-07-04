@@ -95,7 +95,7 @@ impl Connection {
                         } else if data_port.is_none() {
                             data_port = Some(PortDescriptor {
                                 path: devname.to_owned(),
-                                baud_rate: 115200,
+                                baud_rate: 921600,
                             });
                         }
                     }
