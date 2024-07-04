@@ -158,13 +158,17 @@ async fn maintain_connection(
 ) -> Result<(), Box<dyn std::error::Error>> {
     yield_now().await;
     if let Some(message) = zed.try_read() {
+        let points: Vec<(usize, Point)> = message.bodies.iter().enumerate().flat_map(|(i, body)| {
+                body.keypoints.iter().map(|&pt| (i, transform.apply(pt.into()).into())).collect::<Vec<(usize, Point)>>()}).collect();
+        let labels: Vec<String> = points.clone().iter().map(|(i, p)| format!("zedbody:{}", i)).collect();
+        let points = points.iter().map(|(i, p)| *p).collect();
+        let labels = Vec::new();
         let message = Message {
             content: mmwave_core::message::MessageContent::PointCloud(
                 mmwave_core::pointcloud::PointCloud { 
-                    time: chrono::Utc::now(), 
-                    points:  message.bodies.iter().flat_map(|body| {
-                    body.keypoints.iter().map(|&pt| transform.apply(pt.into()).into()).collect::<Vec<Point>>()
-                }).collect()
+                    time: chrono::Utc::now(),
+                    points,
+                    labels
                 }
             ),
             tags: vec![Tag::Pointcloud, Tag::FromId(id)],

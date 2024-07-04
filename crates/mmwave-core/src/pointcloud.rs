@@ -8,6 +8,7 @@ type Type = DateTime<Utc>;
 pub struct PointCloud {
     pub time: Type,
     pub points: Vec<Point>, // x, y, z, v
+    pub labels: Vec<String>
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -25,6 +26,18 @@ impl From<Vec<Point>> for PointCloud {
         Self {
             time: chrono::Utc::now(),
             points: value,
+            labels: Vec::new()
+        }
+    }
+
+}
+
+impl From<(Vec<Point>, Vec<String>)> for PointCloud {
+    fn from((points, labels): (Vec<Point>, Vec<String>)) -> Self {
+        Self {
+            time: chrono::Utc::now(),
+            points,
+            labels
         }
     }
 }
@@ -34,6 +47,7 @@ impl Default for PointCloud {
         PointCloud {
             time: Utc::now(),
             points: Vec::new(),
+            labels: Vec::new()
         }
     }
 }
@@ -45,18 +59,21 @@ struct PointCloudHelper {
     y: Vec<f32>,
     z: Vec<f32>,
     v: Vec<f32>,
+    l: Vec<String>
 }
 
 impl From<PointCloud> for PointCloudHelper {
     fn from(pc: PointCloud) -> Self {
         let (x, y, z, v): (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>) =
             pc.points.into_iter().map(|p| (p.x, p.y, p.z, p.v)).unzip4(); // requires the itertools crate
+        let l = pc.labels;
         PointCloudHelper {
             time: pc.time,
             x,
             y,
             z,
             v,
+            l
         }
     }
 }
@@ -71,9 +88,11 @@ impl From<PointCloudHelper> for PointCloud {
             .zip(helper.v.into_iter())
             .map(|(((x, y), z), v)| Point { x, y, z, v })
             .collect();
+        let labels = helper.l;
         PointCloud {
             time: helper.time,
             points,
+            labels,
         }
     }
 }
