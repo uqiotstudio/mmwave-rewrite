@@ -51,6 +51,34 @@
           }
         }
       }
+    },
+    {
+      "id": {
+        "Device": [
+          1,
+          0
+        ]
+      },
+      "device_descriptor": {
+        "type": "AwrDescriptor",
+        "value": {
+          "serial": "00E23E8E",
+          "model": "AWR1843AOP",
+          "config": "",
+          "config_path": "./config_files/profile_AWR1843_AOP.cfg",
+          "transform": {
+            "translation": [
+              0.3,
+              0.6,
+              0.0
+            ],
+            "orientation": [
+              1.5707964,
+              0.0
+            ]
+          }
+        }
+      }
     }
   ]
 }

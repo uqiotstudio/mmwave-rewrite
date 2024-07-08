@@ -162,7 +162,7 @@ async fn maintain_connection(
                 body.keypoints.iter().map(|&pt| (i, transform.apply(pt.into()).into())).collect::<Vec<(usize, Point)>>()}).collect();
         let labels: Vec<String> = points.clone().iter().map(|(i, p)| format!("zedbody:{}", i)).collect();
         let points = points.iter().map(|(i, p)| *p).collect();
-        let labels = Vec::new();
+        // let labels = Vec::new();
         let message = Message {
             content: mmwave_core::message::MessageContent::PointCloud(
                 mmwave_core::pointcloud::PointCloud { 
