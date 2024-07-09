@@ -84,3 +84,6 @@ If the config file does not exist, or you want to utilize a new config, then on 
 In the dashboard, on the right hand panel, add new devices. The config can be sent to NATS (and thus connected clients) via apply, and can be saved to config_out.json (overwriting it) with the save button.
 
 ## Client
+On any client machine, run ``cargo run --bin mmwave-machine -- -m <machine-id> -t``. This will start a machine, which should wait until the server is found and then begin listening for any device configurations that match the machine id.
+
+Note, for mmwave devices, the user running mmwave-machine must have permissions to read/write from `/dev/ttyACM*` for the boost and `/dev/ttyUSB*` for the aop.
