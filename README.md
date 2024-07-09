@@ -86,4 +86,6 @@ In the dashboard, on the right hand panel, add new devices. The config can be se
 ## Client
 On any client machine, run ``cargo run --bin mmwave-machine -- -m <machine-id> -t``. This will start a machine, which should wait until the server is found and then begin listening for any device configurations that match the machine id.
 
-Note, for mmwave devices, the user running mmwave-machine must have permissions to read/write from `/dev/ttyACM*` for the boost and `/dev/ttyUSB*` for the aop.
+Device specific Details:
+- For mmwave devices, the user running mmwave-machine must have permissions to read/write from `/dev/ttyACM*` for the boost and `/dev/ttyUSB*` for the aop.
+- For the zed camera, a device with cuda must be utilized. Modify the command as follows: ``LD_LIBRARY_PATH=$LD_LIBRARY_PATH:<project_root_dir>/crates/mmwave-zed/cpp/build cargo run --features=zed_camera --bin mmwave-machine -- -m <machine-id> -t``.
