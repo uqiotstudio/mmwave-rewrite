@@ -16,7 +16,9 @@ use mmwave_core::{
     devices::DeviceDescriptor,
     message::{Id, Message, MessageContent, Tag, TagsToSubject},
     nats::get_store,
+    point::Point,
     pointcloud::PointCloud,
+    transform::Transform,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
@@ -25,21 +27,23 @@ use std::{
     fmt::Display,
     fs::File,
     io::{BufReader, Read},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 use tokio::{select, task::yield_now};
 use tracing::{debug, error, info, instrument, warn};
 
 #[derive(PartialEq, Debug, Clone, Serialize, Default)]
 pub struct PlaybackDescriptor {
-    pub file_path: String, // Path to the file from which data will be read
+    pub file_path: String,   // Path to the file from which data will be read
     pub label_filter: String, // Label filter for playback
+    pub transform: Transform, // Transform of this Playback device
 }
 
 #[derive(Deserialize)]
 struct PlaybackDescriptorHelper {
     file_path: String,
     label_filter: String,
+    transform: Transform,
 }
 
 impl Eq for PlaybackDescriptor {}
@@ -66,26 +70,8 @@ impl<'de> Deserialize<'de> for PlaybackDescriptor {
         Ok(PlaybackDescriptor {
             file_path: helper.file_path,
             label_filter: helper.label_filter,
+            transform: helper.transform,
         })
-    }
-}
-
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TimestampDescriptor {
-    pub timestamp: u64, // Timestamp to synchronize playback
-}
-
-impl Eq for TimestampDescriptor {}
-
-impl std::hash::Hash for TimestampDescriptor {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.timestamp.hash(state);
-    }
-}
-
-impl Display for TimestampDescriptor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.timestamp)
     }
 }
 
@@ -120,34 +106,15 @@ impl DeviceDescriptor for PlaybackDescriptor {
             ui.label("Label Filter:");
             ui.text_edit_singleline(&mut self.label_filter);
         });
-    }
-}
-
-#[typetag::serde]
-#[async_trait]
-impl DeviceDescriptor for TimestampDescriptor {
-    #[instrument(skip_all, fields(self=%self, id=%id))]
-    async fn init(self: Box<Self>, id: Id, address: ServerAddress) {
-        // Initialization logic for TimestampDescriptor if needed
+        self.transform.ui(ui);
     }
 
-    fn clone_boxed(&self) -> Box<dyn DeviceDescriptor> {
-        Box::new(self.clone())
+    fn transform(&self) -> Option<Transform> {
+        Some(self.transform.clone())
     }
 
-    fn title(&self) -> String {
-        format!("{}", self)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn ui(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            ui.label("Timestamp:");
-            ui.text_edit_singleline(&mut self.timestamp.to_string());
-        });
+    fn position(&self) -> Option<Point> {
+        Some(self.transform.apply([0.0, 0.0, 0.0].into()).into())
     }
 }
 
@@ -174,6 +141,8 @@ async fn start_playback(
 
         if let Err(e) = run_playback(
             &client,
+            &store,
+            &mut entries,
             descriptor.clone(),
             id,
         )
@@ -185,10 +154,13 @@ async fn start_playback(
     }
 }
 
+
 #[instrument(skip_all)]
 async fn run_playback(
     client: &Client,
-    descriptor: PlaybackDescriptor,
+    store: &Store,
+    entries: &mut Watch,
+    mut descriptor: PlaybackDescriptor,
     id: Id,
 ) -> Result<(), Box<dyn Error>> {
     let file = File::open(&descriptor.file_path)?;
@@ -203,7 +175,7 @@ async fn run_playback(
     let time_started = Utc::now();
     let mut ptc_time_started = None;
 
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
+    let mut interval = tokio::time::interval(Duration::from_millis(10));
     for pointcloud in json_array {
         if ptc_time_started == None {
             ptc_time_started = Some(pointcloud.time);
@@ -216,16 +188,46 @@ async fn run_playback(
             if time_passed > ptc_time_passed {
                 continue;
             }
+            if ptc_time_passed > time_passed {
+                tokio::time::sleep(Duration::from_millis((ptc_time_passed - time_passed).num_milliseconds() as u64)).await;
+            }
+
+            let transformed_points: Vec<_> = pointcloud
+                .points
+                .iter()
+                .map(|pt| Point {
+                    x: pt.x * if descriptor.label_filter == "" {-1.0} else {1.0},
+                    ..*pt
+                })
+                .map(|pt| descriptor.transform.apply(pt.into()).into())
+                .collect();
+
+            let transformed_pointcloud = PointCloud {
+                points: transformed_points,
+                ..pointcloud
+            };
 
             let message = Message {
-                content: MessageContent::PointCloud(pointcloud),
+                content: MessageContent::PointCloud(transformed_pointcloud),
                 tags: vec![Tag::Pointcloud, Tag::FromId(id)],
                 timestamp: chrono::Utc::now(),
             };
             let subject = message.tags.clone().to_subject();
             let payload = bincode::serialize(&message)?.into();
             client.publish(subject, payload).await?;
-            interval.tick().await;
+            yield_now().await;
+        }
+
+        select! {
+            _ = interval.tick() => {},
+            config = entries.next() => {
+                if let Some(config) = config {
+                    let entry = config?;
+                    if let Err(e) = maintain_config(entry, &mut descriptor, id) {
+                        error!(error=?e, "Failed to maintain config");
+                    }
+                }
+            }
         }
     }
 
@@ -269,7 +271,13 @@ fn maintain_config(
             info!("Updated playback descriptor label filter");
             descriptor.label_filter = updated_desc.label_filter.clone();
         }
+
+        if descriptor.transform != updated_desc.transform {
+            info!("Updated playback descriptor transform");
+            descriptor.transform = updated_desc.transform.clone();
+        }
     }
 
     Ok(())
 }
+
