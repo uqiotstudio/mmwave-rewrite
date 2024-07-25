@@ -12,6 +12,7 @@ use mmwave_core::{
     message::Id,
     transform::Transform,
 };
+use mmwave_playback::{PlaybackDescriptor, TimestampDescriptor};
 use mmwave_recorder::RecordingDescriptor;
 use mmwave_zed::ZedDescriptor;
 use tracing::info;
@@ -56,6 +57,18 @@ impl ConfigWidget {
                 self.config.descriptors.push(DeviceConfig {
                     id: Id::Device(0, 0),
                     device_descriptor: Box::new(ZedDescriptor::default()),
+                });
+            }
+            if ui.button("new playback").clicked() {
+                self.config.descriptors.push(DeviceConfig {
+                    id: Id::Device(0, 0),
+                    device_descriptor: Box::new(PlaybackDescriptor::default()),
+                });
+            }
+            if ui.button("new timestamp").clicked() {
+                self.config.descriptors.push(DeviceConfig {
+                    id: Id::Device(0, 0),
+                    device_descriptor: Box::new(TimestampDescriptor::default())
                 });
             }
             if ui.button("new empty").clicked() {

@@ -12,7 +12,8 @@ members = [
   "crates/mmwave-discovery",
   "crates/mmwave-machine", 
   "crates/mmwave-dashboard",
-  "crates/mmwave-zed"
+  "crates/mmwave-zed",
+  "crates/mmwave-playback"
 ]
 
 [workspace.dependencies]
@@ -47,3 +48,8 @@ egui_file = "0.17.0"
 wasm-bindgen-futures = "0.4"
 async-ctrlc = "1.2.0"
 libc = "0.2"
+mmwave-awr = { path = "./crates/mmwave-awr" }
+mmwave-zed = { path = "./crates/mmwave-zed" }
+mmwave-recorder = { path = "./crates/mmwave-recorder" }
+mmwave-playback = { path = "./crates/mmwave-playback" }
+mmwave-core = { path = "./crates/mmwave-core" }

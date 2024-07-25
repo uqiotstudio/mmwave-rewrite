@@ -1,0 +1,20 @@
+[package]
+name = "mmwave-playback"
+version.workspace = true
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-nats.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+egui.workspace = true
+tokio.workspace = true
+mmwave-core = {path="../mmwave-core"}
+serde_json.workspace = true
+tracing.workspace = true
+futures.workspace = true
+bincode.workspace = true
+serde.workspace = true
+typetag.workspace = true

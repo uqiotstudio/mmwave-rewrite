@@ -18,7 +18,8 @@ tracing.workspace = true
 mmwave-core = { path = "../mmwave-core" }
 egui_plot.workspace = true
 serde_json.workspace = true
-mmwave-awr = { path = "../mmwave-awr" }
-mmwave-recorder = { path = "../mmwave-recorder" }
-mmwave-zed = { path = "../mmwave-zed" }
+mmwave-awr.workspace = true
+mmwave-recorder.workspace = true
+mmwave-zed.workspace = true
+mmwave-playback.workspace = true
 chrono.workspace = true

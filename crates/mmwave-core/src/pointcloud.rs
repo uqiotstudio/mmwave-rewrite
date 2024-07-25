@@ -2,11 +2,9 @@ use crate::point::Point;
 use chrono::{DateTime, Utc};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-type Type = DateTime<Utc>;
-
 #[derive(Debug, Clone)]
 pub struct PointCloud {
-    pub time: Type,
+    pub time: DateTime<Utc>,
     pub points: Vec<Point>, // x, y, z, v
     pub labels: Vec<String>
 }

@@ -1773,6 +1773,7 @@ dependencies = [
  "futures",
  "mmwave-awr",
  "mmwave-core",
+ "mmwave-playback",
  "mmwave-recorder",
  "mmwave-zed",
  "serde",
@@ -1802,11 +1803,30 @@ dependencies = [
  "futures",
  "mmwave-awr",
  "mmwave-core",
+ "mmwave-playback",
  "mmwave-recorder",
  "mmwave-zed",
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "mmwave-playback"
+version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "async-trait",
+ "bincode",
+ "chrono",
+ "egui",
+ "futures",
+ "mmwave-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "typetag",
 ]
 
 [[package]]

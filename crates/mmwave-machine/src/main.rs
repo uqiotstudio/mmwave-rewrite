@@ -7,6 +7,7 @@ use clap::Parser;
 use futures::{future, task::noop_waker, Future, FutureExt, StreamExt};
 use mmwave_awr::{AwrDescriptor, Model};
 use mmwave_zed::{ZedDescriptor};
+use mmwave_playback::{PlaybackDescriptor};
 use mmwave_core::{
     address::ServerAddress,
     config::Configuration,
