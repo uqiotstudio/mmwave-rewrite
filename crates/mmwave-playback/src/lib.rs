@@ -197,6 +197,7 @@ async fn run_playback(
                 .iter()
                 .map(|pt| Point {
                     x: pt.x * if descriptor.label_filter == "" {-1.0} else {1.0},
+                    // z: pt.z * if descriptor.label_filter == "zed" {-1.0} else {1.0},
                     ..*pt
                 })
                 .map(|pt| descriptor.transform.apply(pt.into()).into())

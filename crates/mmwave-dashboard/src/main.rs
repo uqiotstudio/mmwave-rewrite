@@ -57,6 +57,7 @@ struct MyApp {
     cfg_out_tx: mpsc::Sender<Configuration>,
     pointcloud: HashMap<Id, (Instant, Vec<Point>)>,
     config_widget: ConfigWidget,
+    global_transform: Transform
 }
 
 #[tokio::main]
@@ -112,12 +113,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 update_config(frame, store, cfg_out_rx).await;
             });
 
+            let global_transform = Transform::default();
+
             Box::new(MyApp {
                 pointcloud: HashMap::new(),
                 config_widget: ConfigWidget::default(),
                 ptc_rx,
                 cfg_in_rx,
                 cfg_out_tx,
+                global_transform
             })
         }),
     );
@@ -246,6 +250,7 @@ impl eframe::App for MyApp {
                 .show_inside(ui, |ui| self.config_widget.ui(ui));
 
             egui::CentralPanel::default().show_inside(ui, |ui| {
+                self.global_transform.ui(ui);
                 egui_plot::Plot::new("pointcloud_plot")
                     .allow_zoom(true)
                     .allow_drag(true)
@@ -289,7 +294,7 @@ impl eframe::App for MyApp {
                                     .iter()
                                     .map(|&p| {
                                         let p =
-                                            new_transform.apply(old_transform.unapply(p.into()));
+                                            self.global_transform.apply(new_transform.apply(old_transform.unapply(p.into())));
                                         PlotPoint {
                                             x: p[0] as f64,
                                             y: p[1] as f64,
@@ -352,7 +357,7 @@ impl eframe::App for MyApp {
                                                     p[1] *= 0.05;
                                                     p[2] *= 0.05;
 
-                                                    let p = transform.apply(*p);
+                                                    let p = self.global_transform.apply(transform.apply(*p));
                                                     PlotPoint {
                                                         x: p[0] as f64,
                                                         y: p[1] as f64,
@@ -367,7 +372,7 @@ impl eframe::App for MyApp {
                                     );
                                 }
 
-                                let origin = transform.apply([0.0, 0.0, 0.0]);
+                                let origin = self.global_transform.apply(transform.apply([0.0, 0.0, 0.0]));
                                 plot_ui.text(
                                     Text::new(
                                         PlotPoint {
