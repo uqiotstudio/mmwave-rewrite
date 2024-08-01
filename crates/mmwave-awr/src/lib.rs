@@ -155,6 +155,14 @@ impl DeviceDescriptor for AwrDescriptor {
                     ui.selectable_value(&mut self.model, Model::AWR1843Boost, "BOOST");
                     ui.selectable_value(&mut self.model, Model::AWR1843AOP, "AOP");
                 });
+            if self.config_path == "" {
+                if self.model == Model::AWR1843Boost {
+                    self.config = include_str!("../../../config_files/profile_AWR1843B.cfg").to_string();
+                } else if self.model == Model::AWR1843AOP {
+                    self.config = include_str!("../../../config_files/profile_AWR1843_AOP.cfg").to_string();
+
+                }
+            };
         });
         self.transform.ui(ui);
 

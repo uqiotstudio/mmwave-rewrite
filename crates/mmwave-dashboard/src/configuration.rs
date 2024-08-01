@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
-    io::Write,
+    io::{BufRead, BufReader, Read, Write},
 };
 
 use egui::{Color32, RichText};
@@ -36,6 +36,7 @@ impl ConfigWidget {
     fn render_header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             self.render_reload_config_button(ui);
+            self.render_load_config_button(ui);
             self.render_apply_config_button(ui);
             self.render_save_config_button(ui);
         });
@@ -109,7 +110,7 @@ impl ConfigWidget {
     }
 
     fn render_save_config_button(&self, ui: &mut egui::Ui) {
-        if ui.button("save to config_out.json").clicked() {
+        if ui.button("save config_out.json").clicked() {
             let mut file = File::create("config_out.json").unwrap();
 
             let Ok(config) = serde_json::to_string_pretty(&self.config) else {
@@ -117,6 +118,18 @@ impl ConfigWidget {
             };
 
             let _ = file.write_all(config.as_bytes());
+        }
+    }
+
+    fn render_load_config_button(&mut self, ui: &mut egui::Ui) {
+        if ui.button("load output_config.json").clicked() {
+            let mut file = File::open("config_out.json").unwrap();
+            let reader = BufReader::new(file);
+
+            if let Ok(config) = serde_json::from_reader(reader) {
+                self.config = config;
+            };
+
         }
     }
 
