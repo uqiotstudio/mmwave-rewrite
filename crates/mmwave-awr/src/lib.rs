@@ -282,7 +282,10 @@ async fn maintain_connection(
                 warn!(error=%e, "AWR parse error, this is usually fine");
                 return Ok(());
             }
-            other => return Err(Box::new(other)),
+            other => {
+                warn!(error=%other, "AWR other error");
+                return Err(Box::new(other));
+            }
         },
     };
     let mut message = Message {
