@@ -289,14 +289,21 @@ async fn maintain_connection(
         },
     };
     let mut message = Message {
-        content: mmwave_core::message::MessageContent::PointCloud(
-            Into::<PointCloud>::into(frame)
+        content: mmwave_core::message::MessageContent::PointCloud({
+            let (i1, i2) = Into::<PointCloud>::into(frame)
                 .points
                 .iter_mut()
-                .map(|&mut pt| transform.apply(pt.into()).into())
-                .collect::<Vec<Point>>()
-                .into(),
-        ),
+                .map(|&mut pt| {
+                    let v = pt.v;
+                    let mut pt: Point = transform.apply(pt.into()).into();
+                    let l = format!("{}", id);
+                    pt.v = v;
+                    (pt, l)
+                })
+                .unzip();
+
+            PointCloud::from((i1, i2))
+        }),
         tags: Vec::from([Tag::Pointcloud, Tag::FromId(id)]),
         timestamp: chrono::Utc::now(),
     };
