@@ -1,5 +1,5 @@
 # mmwave-rewrite
-See the [quickstart](https://github.com/McArthur-Alford/mmwave-deploy/blob/main/README.md) guide if you are interested in a step-by-step for getting everything running. Below is some more general purpose documentation.
+See the [quickstart](https://github.com/McArthur-Alford/mmwave-deploy/blob/main/README.md) guide if you are interested in a step-by-step for getting everything running. Below is some more detailed documentation for the individual commands.
 
 # Supported Devices:
 At the moment the following modules are provided:
