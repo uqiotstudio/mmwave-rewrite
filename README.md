@@ -1,6 +1,5 @@
 # mmwave-rewrite
-
-This project provides helpful tools for networked recording (utilizing NATS) of various sensors utilized in research under Dr Matthew D'Souza and Dr Bronwyn Clark for classification of human motion.
+See the [quickstart](https://github.com/McArthur-Alford/mmwave-deploy/blob/main/README.md) guide if you are interested in a step-by-step for getting everything running. Below is some more general purpose documentation.
 
 # Supported Devices:
 At the moment the following modules are provided:
@@ -44,8 +43,7 @@ Options:
 ```
 
 ### mmwave-dashboard
-The dashboard. Allows creation/application of configurations, and visualisation of data.
-This is not a CLI dashboard, you need a gui.
+The dashboard. Allows creation/application of configurations, and visualisation of data. This is a GUI dashboard, not CLI.
 
 ```
 Usage: mmwave-dashboard [OPTIONS]
@@ -64,7 +62,7 @@ For easy deployment utilizing nix, see https://github.com/McArthur-Alford/mmwave
 
 ## Server
 On the machine designated as the server (hosting NATs), run the following:
-``cargo run --bin mmwave-discovery -- -t``
+``mmwave-discovery -t``
 ``sh ./nats_server.sh``
 For a port other than 3000, mmwave-discovery takes the port argument. nats_server.sh is fairly simple and easy to modify.
 
@@ -74,14 +72,15 @@ The server can be run on the same machine as a client with no issues.
 
 ## Configuration/Dashboard
 An example configuration file should exist at ``<project_root_dir>/config_out.json``.
-If the config file exists and the server has just started, then on the server machine run:
+
+If the config file does not exist, or you want to utilize a new config, then on any machine, run the dashboard via ``cargo run --bin mmwave-dashboard -- -t``.
+In the dashboard, on the right hand panel, add new devices. The config can be sent to NATS (and thus connected clients) via apply, and can be saved to config_out.json (overwriting it) with the save button.
+
+If the config file exists, it can be manually loaded without the dashboard via the commands:
 ```sh
 nats kv add config
 nats kv put config config "$(cat ./config_out.json)"
 ```
-
-If the config file does not exist, or you want to utilize a new config, then on any machine, run the dashboard via ``cargo run --bin mmwave-dashboard -- -t``.
-In the dashboard, on the right hand panel, add new devices. The config can be sent to NATS (and thus connected clients) via apply, and can be saved to config_out.json (overwriting it) with the save button.
 
 ## Client
 On any client machine, run ``cargo run --bin mmwave-machine -- -m <machine-id> -t``. This will start a machine, which should wait until the server is found and then begin listening for any device configurations that match the machine id.
